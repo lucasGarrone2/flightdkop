@@ -5,8 +5,9 @@ export interface RouteAnalysis {
   cheapestPrice: number;
   averagePrice: number;
   highestPrice: number;
-  dealRating: 'EXCELLENT_DEAL' | 'GOOD_DEAL' | 'AVERAGE' | 'HIGH_PRICE';
+  dealRating: 'MISTAKE_FARE' | 'EXCELLENT_DEAL' | 'GOOD_DEAL' | 'AVERAGE' | 'HIGH_PRICE';
   dealLabel: string;
+  isMistakeFare: boolean;
   bestOriginAirport: string;
   bestOriginCity: string;
   totalOffersAnalyzed: number;
@@ -27,6 +28,7 @@ export class AnalyticsService {
         highestPrice: 0,
         dealRating: 'AVERAGE',
         dealLabel: 'Sin datos suficientes',
+        isMistakeFare: false,
         bestOriginAirport: 'EZE',
         bestOriginCity: 'Buenos Aires',
         totalOffersAnalyzed: 0,
@@ -40,12 +42,18 @@ export class AnalyticsService {
     const averagePrice = Math.round(prices.reduce((sum, p) => sum + p, 0) / prices.length);
 
     // Determine deal rating vs average or historical minimum
-    let dealRating: 'EXCELLENT_DEAL' | 'GOOD_DEAL' | 'AVERAGE' | 'HIGH_PRICE' = 'AVERAGE';
+    let dealRating: 'MISTAKE_FARE' | 'EXCELLENT_DEAL' | 'GOOD_DEAL' | 'AVERAGE' | 'HIGH_PRICE' = 'AVERAGE';
     let dealLabel = 'Precio dentro del rango habitual';
+    let isMistakeFare = false;
 
     const baselinePrice = historicalMinPrice && historicalMinPrice > 0 ? Math.min(averagePrice, historicalMinPrice) : averagePrice;
 
-    if (cheapestPrice <= baselinePrice * 0.85) {
+    if (cheapestPrice <= baselinePrice * 0.75 || cheapestPrice <= 800) {
+      dealRating = 'MISTAKE_FARE';
+      isMistakeFare = true;
+      const discountPct = Math.round(((averagePrice - cheapestPrice) / averagePrice) * 100);
+      dealLabel = `🔥 ¡ALERTA DE TARIFA ERROR O DÍA HISTÓRICO! USD $${cheapestPrice} está un ${discountPct}% por debajo del promedio.`;
+    } else if (cheapestPrice <= baselinePrice * 0.85) {
       dealRating = 'EXCELLENT_DEAL';
       dealLabel = `🔥 ¡Gran Oportunidad! USD $${cheapestPrice} está un ${Math.round(((averagePrice - cheapestPrice) / averagePrice) * 100)}% por debajo del promedio.`;
     } else if (cheapestPrice <= baselinePrice * 0.95) {
@@ -113,6 +121,7 @@ export class AnalyticsService {
       highestPrice,
       dealRating,
       dealLabel,
+      isMistakeFare,
       bestOriginAirport,
       bestOriginCity: airportCityMap[bestOriginAirport] || bestOriginAirport,
       totalOffersAnalyzed: offers.length,

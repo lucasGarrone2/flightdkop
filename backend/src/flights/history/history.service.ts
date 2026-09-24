@@ -119,4 +119,47 @@ export class HistoryService {
       where: { isActive: true },
     });
   }
+
+  // --- Saved Favorite Dates CRUD ---
+
+  async saveFavoriteDate(
+    origin: string,
+    destination: string,
+    departureDate: string,
+    price: number,
+    airline: string,
+    duration: string = '',
+    bookingUrl: string | null = null,
+    chatId: string,
+  ) {
+    return this.prisma.savedDate.create({
+      data: {
+        origin,
+        destination,
+        departureDate,
+        price,
+        airline,
+        duration,
+        bookingUrl,
+        chatId,
+      },
+    });
+  }
+
+  async getUserSavedDates(chatId: string) {
+    return this.prisma.savedDate.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async deleteSavedDate(savedId: string, chatId: string) {
+    return this.prisma.savedDate.deleteMany({
+      where: {
+        id: savedId,
+        chatId,
+      },
+    });
+  }
 }
+

@@ -6,6 +6,8 @@ import { HistoryService } from '../flights/history/history.service';
 import { AlertsService } from './alerts.service';
 import { DEFAULT_GENERAL_START_DATE, DEFAULT_GENERAL_END_DATE } from '../config/airports.config';
 
+import { FlightsCronService } from '../flights/cron/flights-cron.service';
+
 @Injectable()
 export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramBotListenerService.name);
@@ -17,6 +19,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     private readonly flightsService: FlightsService,
     private readonly historyService: HistoryService,
     private readonly alertsService: AlertsService,
+    private readonly flightsCronService: FlightsCronService,
   ) {}
 
   onModuleInit() {
@@ -237,11 +240,18 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         return;
       }
 
-      // --- COMMAND: /buscar ---
-      if (command === '/buscar') {
-        if (parts.length < 4) {
+      // --- COMMAND: /resumen_semanal ---
+      if (command === '/resumen_semanal' || command === '/viernes') {
+        await this.alertsService.sendTelegramAlert(`✨ Generando <b>Resumen Semanal de Ofertas</b>...`);
+        await this.flightsCronService.sendWeeklySummary();
+        return;
+      }
+
+      // --- COMMAND: /guardar_fecha ORIGEN DESTINO FECHA PRECIO AIRLINE ---
+      if (command === '/guardar_fecha' || command === '/guardar') {
+        if (parts.length < 6) {
           await this.alertsService.sendTelegramAlert(
-            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/buscar ORIGEN DESTINO FECHA</code>\nEjemplo: <code>/buscar EZE CPH 2027-03-30</code>',
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/guardar_fecha ORIGEN DESTINO FECHA PRECIO AEROLINEA</code>\nEjemplo: <code>/guardar_fecha EZE CPH 2027-03-15 824 Lufthansa</code>',
           );
           return;
         }
@@ -249,15 +259,97 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const origin = parts[1].toUpperCase();
         const destination = parts[2].toUpperCase();
         const departureDate = this.normalizeDate(parts[3]);
+        const price = parseFloat(parts[4]);
+        const airline = parts.slice(5).join(' ');
+
+        if (isNaN(price)) {
+          await this.alertsService.sendTelegramAlert('⚠️ El precio debe ser un número válido.');
+          return;
+        }
+
+        const saved = await this.historyService.saveFavoriteDate(
+          origin,
+          destination,
+          departureDate,
+          price,
+          airline,
+          '',
+          null,
+          chatId,
+        );
+
+        let msg = `📌 <b>¡FECHA/VUELO GUARDADO EN FAVORITOS!</b>\n\n`;
+        msg += `✈️ <b>Ruta:</b> ${saved.origin} ➔ ${saved.destination}\n`;
+        msg += `📅 <b>Fecha:</b> ${saved.departureDate}\n`;
+        msg += `💰 <b>Precio:</b> USD $${saved.price}\n`;
+        msg += `✈️ <b>Aerolínea:</b> ${saved.airline}\n`;
+        msg += `🆔 <b>ID Guardado:</b> <code>${saved.id}</code>\n\n`;
+        msg += `<i>Podés consultar tus fechas guardadas enviando: <code>/fechas</code></i>`;
+
+        await this.alertsService.sendTelegramAlert(msg);
+        return;
+      }
+
+      // --- COMMAND: /fechas ---
+      if (command === '/fechas' || command === '/mis_fechas' || command === '/favoritos') {
+        const savedDates = await this.historyService.getUserSavedDates(chatId);
+
+        if (!savedDates || savedDates.length === 0) {
+          await this.alertsService.sendTelegramAlert(
+            '📭 No tenés fechas ni vuelos favoritos guardados.\nGuardá una fecha escribiendo:\n<code>/guardar_fecha EZE CPH 2027-03-15 824 Lufthansa</code>',
+          );
+          return;
+        }
+
+        let msg = `📌 <b>TUS FECHAS Y VUELOS FAVORITOS GUARDADOS (${savedDates.length})</b>\n\n`;
+        savedDates.forEach((s, idx) => {
+          msg += `<b>#${idx + 1} ${s.origin} ➔ ${s.destination} (${s.departureDate})</b>\n`;
+          msg += `💰 Precio: <b>USD $${s.price}</b> | ✈️ Aerolínea: ${s.airline}\n`;
+          msg += `🆔 ID: <code>${s.id}</code>\n\n`;
+        });
+
+        msg += `<i>Para borrar una fecha guardada, enviá: <code>/borrar_fecha ID</code></i>`;
+        await this.alertsService.sendTelegramAlert(msg);
+        return;
+      }
+
+      // --- COMMAND: /borrar_fecha ID ---
+      if (command === '/borrar_fecha' || command === '/eliminar_fecha') {
+        if (parts.length < 2) {
+          await this.alertsService.sendTelegramAlert('⚠️ Debés indicar el ID de la fecha guardada. Ejemplo: <code>/borrar_fecha ID</code>');
+          return;
+        }
+
+        const savedId = parts[1];
+        await this.historyService.deleteSavedDate(savedId, chatId);
+
+        await this.alertsService.sendTelegramAlert(`🗑️ <b>Fecha/Vuelo eliminado de favoritos.</b> (ID: <code>${savedId}</code>)`);
+        return;
+      }
+
+      // --- COMMAND: /buscar ---
+      if (command === '/buscar') {
+        if (parts.length < 4) {
+          await this.alertsService.sendTelegramAlert(
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/buscar ORIGEN DESTINO FECHA [directo|1escala|2escalas]</code>\nEjemplo: <code>/buscar EZE CPH 2027-03-30 directo</code>',
+          );
+          return;
+        }
+
+        const origin = parts[1].toUpperCase();
+        const destination = parts[2].toUpperCase();
+        const departureDate = this.normalizeDate(parts[3]);
+        const maxStops = this.parseMaxStops(parts);
 
         await this.alertsService.sendTelegramAlert(
-          `🔍 Buscando vuelos para <b>${origin} ➔ ${destination}</b> en fecha <b>${departureDate}</b>...`,
+          `🔍 Buscando vuelos para <b>${origin} ➔ ${destination}</b> en fecha <b>${departureDate}</b>${maxStops !== undefined ? ` (Máx ${maxStops} escalas)` : ''}...`,
         );
 
         const offers = await this.flightsService.searchFlights({
           origin,
           destination,
           departureDate,
+          maxStops,
         });
 
         if (!offers || offers.length === 0) {
@@ -286,7 +378,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
       if (command === '/rango') {
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
-            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN</code>\nEjemplo: <code>/rango EZE CPH 2027-03-10 2027-04-05</code>',
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN [directo|1escala]</code>\nEjemplo: <code>/rango EZE CPH 2027-03-10 2027-04-05 1escala</code>',
           );
           return;
         }
@@ -295,9 +387,10 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const destination = parts[2].toUpperCase();
         const startDate = this.normalizeDate(parts[3]);
         const endDate = this.normalizeDate(parts[4]);
+        const maxStops = this.parseMaxStops(parts);
 
         await this.alertsService.sendTelegramAlert(
-          `🔍 Evaluando precios y duraciones <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>...`,
+          `🔍 Evaluando precios y duraciones <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>${maxStops !== undefined ? ` (Máx ${maxStops} escalas)` : ''}...`,
         );
 
         const res = await this.flightsService.searchMultiFlights({
@@ -305,6 +398,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           destinations: [destination],
           startDate,
           endDate,
+          maxStops,
         });
 
         if (!res.dateSummaries || res.dateSummaries.length === 0) {
@@ -342,16 +436,17 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
       if (command === '/argentina') {
         if (parts.length < 3) {
           await this.alertsService.sendTelegramAlert(
-            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/argentina DESTINO FECHA</code>\nEjemplo: <code>/argentina CPH 2027-03-30</code>',
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/argentina DESTINO FECHA [directo|1escala]</code>\nEjemplo: <code>/argentina CPH 2027-03-30 1escala</code>',
           );
           return;
         }
 
         const destination = parts[1].toUpperCase();
         const departureDate = this.normalizeDate(parts[2]);
+        const maxStops = this.parseMaxStops(parts);
 
         await this.alertsService.sendTelegramAlert(
-          `🔍 Buscando desde <b>toda Argentina (EZE, AEP, COR, MDZ, ROS)</b> a <b>${destination}</b> el <b>${departureDate}</b>...`,
+          `🔍 Buscando desde <b>toda Argentina (EZE, AEP, COR, MDZ, ROS)</b> a <b>${destination}</b> el <b>${departureDate}</b>${maxStops !== undefined ? ` (Máx ${maxStops} escalas)` : ''}...`,
         );
 
         const res = await this.flightsService.searchMultiFlights({
@@ -359,6 +454,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           destinations: [destination],
           startDate: departureDate,
           endDate: departureDate,
+          maxStops,
         });
 
         if (!res.offers || res.offers.length === 0) {
@@ -387,6 +483,14 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     }
   }
 
+  private parseMaxStops(tokens: string[]): number | undefined {
+    const text = tokens.join(' ').toLowerCase();
+    if (text.includes('directo') || text.includes('0escala') || text.includes('0escalas')) return 0;
+    if (text.includes('1escala') || text.includes('1escalas')) return 1;
+    if (text.includes('2escala') || text.includes('2escalas')) return 2;
+    return undefined;
+  }
+
   private normalizeDate(dateStr: string): string {
     if (!dateStr) return dateStr;
     let clean = dateStr.replace(/\//g, '-');
@@ -403,14 +507,20 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
 📊 <b>Resumen Ejecutivo & Análisis:</b>
 • <code>/dashboard</code> (Resumen ejecutivo del rango general 10/03 al 05/04)
-• <code>/rutas</code> (Análisis de rutas y conexiones en Europa)
+• <code>/resumen_semanal</code> (Top 3 ofertas de la semana)
+• <code>/rutas</code> (Análisis de conexiones en Europa)
 
-🔍 <b>Comandos de Búsqueda Instantánea:</b>
-• <code>/buscar EZE CPH 2027-03-30</code>
-• <code>/rango EZE CPH 2027-03-10 2027-04-05</code>
+🔍 <b>Búsquedas Instantáneas (Soporta filtro directo/1escala):</b>
+• <code>/buscar EZE CPH 2027-03-30 1escala</code>
+• <code>/rango EZE CPH 2027-03-10 2027-04-05 directo</code>
 • <code>/argentina CPH 2027-03-30</code>
 
-📡 <b>Comandos de Vigilancia Continua:</b>
+📌 <b>Fechas & Vuelos Favoritos Guardados:</b>
+• <code>/guardar_fecha EZE CPH 2027-03-15 824 Lufthansa</code>
+• <code>/fechas</code> (Ver lista de fechas guardadas)
+• <code>/borrar_fecha ID</code>
+
+📡 <b>Vigilancia Continua de Precios:</b>
 • <code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>
 • <code>/mis_vigilancias</code>
 • <code>/borrar_vigilancia ID</code>
@@ -418,3 +528,4 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     await this.alertsService.sendTelegramAlert(helpMsg);
   }
 }
+

@@ -55,3 +55,19 @@ model PriceAlert {
 
   @@map("price_alerts")
 }
+
+model SavedDate {
+  id            String   @id @default(uuid())
+  origin        String
+  destination   String
+  departureDate String
+  price         Float
+  airline       String
+  duration      String   @default("")
+  bookingUrl    String?
+  chatId        String
+  createdAt     DateTime @default(now())
+
+  @@map("saved_dates")
+}
+

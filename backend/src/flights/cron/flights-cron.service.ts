@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { FlightsService } from '../flights.service';
 import { HistoryService } from '../history/history.service';
 import { AlertsService } from '../../alerts/alerts.service';
+import { DEFAULT_GENERAL_START_DATE, DEFAULT_GENERAL_END_DATE } from '../../config/airports.config';
 
 @Injectable()
 export class FlightsCronService {
@@ -19,6 +20,48 @@ export class FlightsCronService {
   async handleDailyFlightCheck() {
     this.logger.log('⏰ Ejecutando escaneo automático diario de vigilancias activas...');
     await this.runAutomaticScan();
+  }
+
+  // Automatically runs every Friday at 18:00 (6 PM)
+  @Cron('0 18 * * 5')
+  async handleFridayWeeklySummary() {
+    this.logger.log('📅 Ejecutando resumen semanal de viernes...');
+    await this.sendWeeklySummary();
+  }
+
+  async sendWeeklySummary() {
+    try {
+      const res = await this.flightsService.searchMultiFlights({
+        origins: ['EZE', 'AEP'],
+        destinations: ['CPH', 'BLL'],
+        startDate: DEFAULT_GENERAL_START_DATE,
+        endDate: DEFAULT_GENERAL_END_DATE,
+      });
+
+      if (!res.offers || res.offers.length === 0) return { success: false, message: 'No hay ofertas' };
+
+      const top3 = res.offers.slice(0, 3);
+      let msg = `✨ <b>RESUMEN DE VIERNES: MEJORES OFERTAS DE LA SEMANA</b> ✨\n\n`;
+      msg += `📅 Rango General: <b>10/03/2027 a 05/04/2027</b>\n`;
+      msg += `${res.analytics.dealLabel}\n\n`;
+      msg += `<b>🏆 TOP 3 VUELOS RECOMENDADOS:</b>\n\n`;
+
+      top3.forEach((offer, i) => {
+        msg += `<b>#${i + 1} ${offer.airline}</b> - 💰 <b>USD $${offer.price}</b>\n`;
+        msg += `📅 Fecha: ${offer.departureDate} (${offer.origin} ➔ ${offer.destination})\n`;
+        msg += `⏱️ Duración: <b>${offer.duration}</b> | 🛑 Escalas: ${offer.stops} | 🏆 ${offer.score || 0}/100 Pts\n`;
+        if (offer.bookingUrl) msg += `<a href="${offer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
+        msg += `\n`;
+      });
+
+      msg += `💡 <i>¡Buen fin de semana! El monitoreo automático sigue activo.</i>`;
+
+      await this.alertsService.sendTelegramAlert(msg);
+      return { success: true };
+    } catch (err: any) {
+      this.logger.error(`Error enviando resumen semanal: ${err.message}`);
+      return { success: false, error: err.message };
+    }
   }
 
   // Dynamic automatic scan of all active watchers stored in database
@@ -69,3 +112,4 @@ export class FlightsCronService {
     }
   }
 }
+
