@@ -267,12 +267,12 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           return;
         }
 
-        const top = offers.slice(0, 3);
-        let msg = `✈️ <b>RESULTADOS PARA ${origin} ➔ ${destination} (${departureDate})</b>\n\n`;
+        const top = offers.slice(0, 5);
+        let msg = `✈️ <b>TOP 5 OPCIONES (PRECIO/HORAS) PARA ${origin} ➔ ${destination} (${departureDate})</b>\n\n`;
 
         top.forEach((offer, i) => {
-          msg += `<b>#${i + 1} ${offer.airline}</b> - 🏆 ${offer.score || 0}/100 Pts\n`;
-          msg += `💰 <b>USD $${offer.price}</b> | ⏱️ ${offer.duration} | Escalas: ${offer.stops}\n`;
+          msg += `<b>#${i + 1} ${offer.airline}</b> - 🏆 <b>${offer.score || 0}/100 Pts</b>\n`;
+          msg += `💰 <b>USD $${offer.price}</b> | ⏱️ Duración: <b>${offer.duration}</b> | Escalas: ${offer.stops}\n`;
           if (offer.selfTransfer) msg += `⚠️ <i>Self-Transfer (Vuelos independientes)</i>\n`;
           if (offer.bookingUrl) msg += `<a href="${offer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
           msg += `\n`;
@@ -321,19 +321,15 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           msg += `• <b>${s.date}:</b> $${s.lowestPrice} (⏱️ ${s.fastestDuration})${tagText}\n`;
         });
 
-        if (res.bestOffer) {
-          msg += `\n🏆 <b>OPCIÓN MEJOR RANKING (PRECIO/DURACIÓN):</b>\n`;
-          msg += `✈️ <b>${res.bestOffer.airline}</b> - 💰 USD $${res.bestOffer.price}\n`;
-          msg += `📅 Fecha: ${res.bestOffer.departureDate} | ⏱️ Duración: ${res.bestOffer.duration}\n`;
-          msg += `🛑 Escalas: ${res.bestOffer.stops} | Puntaje: 🏆 ${res.bestOffer.score || 0}/100 Pts\n`;
-          if (res.bestOffer.bookingUrl) msg += `<a href="${res.bestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
-        }
-
-        if (res.fastestOffer && res.fastestOffer.id !== res.bestOffer?.id) {
-          msg += `\n⚡ <b>OPCIÓN MÁS RÁPIDA:</b>\n`;
-          msg += `✈️ <b>${res.fastestOffer.airline}</b> - USD $${res.fastestOffer.price} (⏱️ ${res.fastestOffer.duration})\n`;
-          msg += `📅 Fecha: ${res.fastestOffer.departureDate}\n`;
-          if (res.fastestOffer.bookingUrl) msg += `<a href="${res.fastestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
+        if (res.offers && res.offers.length > 0) {
+          const top5 = res.offers.slice(0, 5);
+          msg += `\n🏆 <b>TOP 5 MEJORES OPCIONES DEL RANGO (PRECIO/HORAS):</b>\n\n`;
+          top5.forEach((offer, i) => {
+            msg += `<b>#${i + 1} ${offer.airline}</b> (${offer.departureDate}) - 💰 <b>USD $${offer.price}</b>\n`;
+            msg += `⏱️ Duración: <b>${offer.duration}</b> | 🛑 Escalas: ${offer.stops} | Puntaje: 🏆 ${offer.score || 0}/100 Pts\n`;
+            if (offer.bookingUrl) msg += `<a href="${offer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
+            msg += `\n`;
+          });
         }
 
         msg += `\n💡 <i>Nota: Precios en USD netos retornados por la API. Al pagar en pesos en Argentina con tarjeta local se aplican impuestos locales (Impuesto PAÍS / Percepciones).</i>`;
@@ -370,8 +366,8 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           return;
         }
 
-        const top = res.offers.slice(0, 4);
-        let msg = `🇦🇷 <b>RESULTADOS DESDE ARGENTINA ➔ ${destination} (${departureDate})</b>\n\n`;
+        const top = res.offers.slice(0, 5);
+        let msg = `🇦🇷 <b>TOP 5 OPCIONES DESDE ARGENTINA ➔ ${destination} (${departureDate})</b>\n\n`;
 
         top.forEach((offer, i) => {
           msg += `<b>#${i + 1} Origen ${offer.origin}:</b> ${offer.airline} - 💰 <b>USD $${offer.price}</b>\n`;
