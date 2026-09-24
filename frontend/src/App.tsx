@@ -23,8 +23,8 @@ export const App: React.FC = () => {
   const [params, setParams] = useState<MultiSearchParams>({
     origins: ['EZE', 'AEP'],
     destinations: ['CPH'],
-    startDate: '2027-03-30',
-    endDate: '2027-04-03',
+    startDate: '2027-03-10',
+    endDate: '2027-04-05',
     passengers: 1,
     maxStops: 2,
   });
@@ -236,6 +236,50 @@ export const App: React.FC = () => {
 
       {!loading && response && (
         <>
+          {/* Executive Dashboard Banner */}
+          {response.analytics && (
+            <div className={styles.dashboardBanner}>
+              <div className={styles.dashboardHeader}>
+                <h2>📊 Panel Ejecutivo de Inteligencia de Vuelos</h2>
+                <span className={styles.dealTag}>
+                  {response.analytics.dealRating === 'EXCELLENT_DEAL' ? '🔥 OPORTUNIDAD ÚNICA' :
+                   response.analytics.dealRating === 'GOOD_DEAL' ? '🟢 BUEN PRECIO' : '📊 MERCADO REGULAR'}
+                </span>
+              </div>
+              <div className={styles.kpiGrid}>
+                <div className={styles.kpiCard}>
+                  <span className={styles.kpiLabel}>🟢 Precio Mínimo</span>
+                  <span className={styles.kpiValue}>USD ${response.analytics.cheapestPrice || (response.cheapestOffer?.price ?? 0)}</span>
+                  <span className={styles.kpiSub}>Mejor tarifa detectada en el rango</span>
+                </div>
+                <div className={styles.kpiCard}>
+                  <span className={styles.kpiLabel}>⚡ Vuelo Más Rápido</span>
+                  <span className={styles.kpiValue}>{response.fastestOffer ? response.fastestOffer.duration : 'N/A'}</span>
+                  <span className={styles.kpiSub}>
+                    {response.fastestOffer ? `${response.fastestOffer.airline} (${response.fastestOffer.origin} → ${response.fastestOffer.destination})` : 'Menor tiempo total de viaje'}
+                  </span>
+                </div>
+                <div className={styles.kpiCard}>
+                  <span className={styles.kpiLabel}>🏆 Mejor Valor</span>
+                  <span className={styles.kpiValue}>
+                    {response.bestOffer ? `USD $${response.bestOffer.price}` : 'N/A'}
+                  </span>
+                  <span className={styles.kpiSub}>
+                    {response.bestOffer?.score ? `Puntuación: ${response.bestOffer.score}/100 Pts` : 'Equilibrio Óptimo Precio/Duración'}
+                  </span>
+                </div>
+                <div className={styles.kpiCard}>
+                  <span className={styles.kpiLabel}>📊 Tendencia vs Histórico</span>
+                  <span className={styles.kpiValue}>
+                    USD ${response.analytics.averagePrice}
+                  </span>
+                  <span className={styles.kpiSub}>
+                    {response.analytics.dealLabel}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Calendar / Price Matrix Section */}
           <div className={styles.summarySection}>
             <div className={styles.summaryHeader}>

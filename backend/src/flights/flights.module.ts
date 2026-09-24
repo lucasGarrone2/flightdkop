@@ -6,6 +6,7 @@ import { SerpApiProvider } from './providers/serpapi.provider';
 import { FlightsCacheService } from './cache/flights-cache.service';
 import { RankingService } from './ranking/ranking.service';
 import { HistoryService } from './history/history.service';
+import { AnalyticsService } from './analytics/analytics.service';
 import { FlightsCronService } from './cron/flights-cron.service';
 import { AlertsModule } from '../alerts/alerts.module';
 
@@ -18,8 +19,9 @@ import { AlertsModule } from '../alerts/alerts.module';
     FlightsCacheService,
     RankingService,
     HistoryService,
+    AnalyticsService,
     FlightsCronService,
   ],
-  exports: [FlightsService, FlightsCacheService, RankingService, HistoryService, FlightsCronService],
+  exports: [FlightsService, FlightsCacheService, RankingService, HistoryService, AnalyticsService, FlightsCronService],
 })
 export class FlightsModule {}

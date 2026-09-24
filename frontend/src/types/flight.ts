@@ -41,15 +41,40 @@ export interface DatePriceSummary {
   origin: string;
   destination: string;
   lowestPrice: number;
+  fastestDuration: string;
+  bestScore: number;
   flightCount: number;
   isBestPrice: boolean;
-  bestOffer: FlightOffer;
+  isFastest: boolean;
+  isBestValue: boolean;
+  bestPriceOffer: FlightOffer;
+  fastestOffer: FlightOffer;
+  bestValueOffer: FlightOffer;
+}
+
+export interface RouteAnalysis {
+  cheapestPrice: number;
+  averagePrice: number;
+  highestPrice: number;
+  dealRating: 'EXCELLENT_DEAL' | 'GOOD_DEAL' | 'AVERAGE' | 'HIGH_PRICE';
+  dealLabel: string;
+  bestOriginAirport: string;
+  bestOriginCity: string;
+  totalOffersAnalyzed: number;
+  alternativeHubs: Array<{
+    hubCode: string;
+    offerCount: number;
+    lowestPrice: number;
+  }>;
 }
 
 export interface MultiFlightSearchResponse {
   bestOffer: FlightOffer | null;
+  cheapestOffer: FlightOffer | null;
+  fastestOffer: FlightOffer | null;
   dateSummaries: DatePriceSummary[];
   offers: FlightOffer[];
+  analytics: RouteAnalysis;
   stats: {
     totalQueries: number;
     cachedHits: number;

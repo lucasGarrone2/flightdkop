@@ -4,6 +4,7 @@ import axios from 'axios';
 import { FlightsService } from '../flights/flights.service';
 import { HistoryService } from '../flights/history/history.service';
 import { AlertsService } from './alerts.service';
+import { DEFAULT_GENERAL_START_DATE, DEFAULT_GENERAL_END_DATE } from '../config/airports.config';
 
 @Injectable()
 export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy {
@@ -79,11 +80,79 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         return;
       }
 
+      // --- COMMAND: /dashboard ---
+      if (command === '/dashboard' || command === '/resumen') {
+        await this.alertsService.sendTelegramAlert(
+          `📊 Generando <b>Dashboard Ejecutivo</b> para el rango general <b>${DEFAULT_GENERAL_START_DATE} ➔ ${DEFAULT_GENERAL_END_DATE}</b>...`,
+        );
+
+        const res = await this.flightsService.searchMultiFlights({
+          origins: ['EZE', 'AEP'],
+          destinations: ['CPH'],
+          startDate: DEFAULT_GENERAL_START_DATE,
+          endDate: DEFAULT_GENERAL_END_DATE,
+        });
+
+        const a = res.analytics;
+        let msg = `📊 <b>DASHBOARD EJECUTIVO DE VUELOS (ARGENTINA ➔ DINAMARCA)</b>\n`;
+        msg += `📅 Rango General: <b>10/03/2027 a 05/04/2027</b>\n\n`;
+
+        msg += `${a.dealLabel}\n\n`;
+
+        msg += `🟢 <b>Precio Mínimo Encontrado:</b> USD $${a.cheapestPrice}\n`;
+        msg += `📈 <b>Precio Promedio:</b> USD $${a.averagePrice}\n`;
+        msg += `🇦🇷 <b>Mejor Aeropuerto Origen:</b> ${a.bestOriginCity} (${a.bestOriginAirport})\n`;
+        msg += `🔎 <b>Total Ofertas Analizadas:</b> ${a.totalOffersAnalyzed}\n\n`;
+
+        if (res.bestOffer) {
+          msg += `🏆 <b>MEJOR VALOR EQUILIBRADO:</b>\n`;
+          msg += `✈️ <b>${res.bestOffer.airline}</b> - 💰 USD $${res.bestOffer.price}\n`;
+          msg += `📅 Fecha: ${res.bestOffer.departureDate} | ⏱️ Duración: ${res.bestOffer.duration}\n`;
+          msg += `🛑 Escalas: ${res.bestOffer.stops} | Puntaje: 🏆 ${res.bestOffer.score || 0}/100 Pts\n`;
+          if (res.bestOffer.bookingUrl) msg += `<a href="${res.bestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
+        }
+
+        if (res.fastestOffer && res.fastestOffer.id !== res.bestOffer?.id) {
+          msg += `\n⚡ <b>OPCIÓN MÁS RÁPIDA:</b>\n`;
+          msg += `✈️ <b>${res.fastestOffer.airline}</b> - USD $${res.fastestOffer.price} (⏱️ ${res.fastestOffer.duration})\n`;
+          msg += `📅 Fecha: ${res.fastestOffer.departureDate}\n`;
+          if (res.fastestOffer.bookingUrl) msg += `<a href="${res.fastestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
+        }
+
+        await this.alertsService.sendTelegramAlert(msg);
+        return;
+      }
+
+      // --- COMMAND: /rutas ---
+      if (command === '/rutas' || command === '/conexiones') {
+        await this.alertsService.sendTelegramAlert(`🗺️ Analizando <b>Rutas Alternativas y Conexiones en Europa</b>...`);
+
+        const res = await this.flightsService.searchMultiFlights({
+          origins: ['EZE', 'AEP'],
+          destinations: ['CPH', 'BLL', 'HAM'],
+          startDate: DEFAULT_GENERAL_START_DATE,
+          endDate: '2027-03-24',
+        });
+
+        const a = res.analytics;
+        let msg = `🗺️ <b>ANÁLISIS DE RUTAS Y CONEXIONES EN EUROPA</b>\n\n`;
+        msg += `<b>Conexiones principales detectadas:</b>\n`;
+
+        a.alternativeHubs.forEach((hub) => {
+          msg += `• <b>Vía ${hub.hubCode}:</b> desde USD $${hub.lowestPrice} (${hub.offerCount} opciones)\n`;
+        });
+
+        msg += `\n💡 <i>Consejo: Volar a Copenhague (CPH) directo o vía Madrid (MAD) / Barcelona (BCN) suele ofrecer el mejor equilibrio precio/duración.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg);
+        return;
+      }
+
       // --- COMMAND: /vigilar ORIGEN DESTINO FECHA_INICIO [FECHA_FIN] PRECIO_MAX ---
       if (command === '/vigilar') {
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
-            '⚠️ <b>Formato incorrecto.</b>\n\nUso para Fecha Única:\n<code>/vigilar EZE CPH 2027-03-30 1100</code>\n\nUso para Rango de Fechas:\n<code>/vigilar EZE CPH 2027-03-30 2027-04-03 1100</code>',
+            '⚠️ <b>Formato incorrecto.</b>\n\nUso para Rango:\n<code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>',
           );
           return;
         }
@@ -96,12 +165,10 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         let targetPrice = 0;
 
         if (parts.length >= 6) {
-          // Range: /vigilar EZE CPH 2027-03-30 2027-04-03 1100
           startDate = this.normalizeDate(parts[3]);
           endDate = this.normalizeDate(parts[4]);
           targetPrice = parseFloat(parts[5]);
         } else {
-          // Single date: /vigilar EZE CPH 2027-03-30 1100
           startDate = this.normalizeDate(parts[3]);
           endDate = startDate;
           targetPrice = parseFloat(parts[4]);
@@ -139,7 +206,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const alerts = await this.historyService.getUserPriceAlerts(chatId);
 
         if (!alerts || alerts.length === 0) {
-          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-30 2027-04-03 1100</code>');
+          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>');
           return;
         }
 
@@ -219,7 +286,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
       if (command === '/rango') {
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
-            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN</code>\nEjemplo: <code>/rango EZE CPH 2027-03-30 2027-04-03</code>',
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN</code>\nEjemplo: <code>/rango EZE CPH 2027-03-10 2027-04-05</code>',
           );
           return;
         }
@@ -338,25 +405,19 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     const helpMsg = `
 🤖 <b>ASISTENTE DE VUELOS ARGENTINA ➔ DINAMARCA</b>
 
-Comandos de Búsqueda Instantánea:
-1️⃣ <b>Búsqueda Puntual:</b>
-<code>/buscar EZE CPH 2027-03-30</code>
+📊 <b>Resumen Ejecutivo & Análisis:</b>
+• <code>/dashboard</code> (Resumen ejecutivo del rango general 10/03 al 05/04)
+• <code>/rutas</code> (Análisis de rutas y conexiones en Europa)
 
-2️⃣ <b>Comparar Rango (Precio + Duración):</b>
-<code>/rango EZE CPH 2027-03-30 2027-04-03</code>
+🔍 <b>Comandos de Búsqueda Instantánea:</b>
+• <code>/buscar EZE CPH 2027-03-30</code>
+• <code>/rango EZE CPH 2027-03-10 2027-04-05</code>
+• <code>/argentina CPH 2027-03-30</code>
 
-3️⃣ <b>Buscar desde Toda Argentina:</b>
-<code>/argentina CPH 2027-03-30</code>
-
-Comandos de Vigilancia Continua:
-4️⃣ <b>Vigilar Rango de Fechas:</b>
-<code>/vigilar EZE CPH 2027-03-30 2027-04-03 1100</code>
-
-5️⃣ <b>Ver mis Vigilancias Activas:</b>
-<code>/mis_vigilancias</code>
-
-6️⃣ <b>Desactivar una Vigilancia:</b>
-<code>/borrar_vigilancia ID</code>
+📡 <b>Comandos de Vigilancia Continua:</b>
+• <code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>
+• <code>/mis_vigilancias</code>
+• <code>/borrar_vigilancia ID</code>
 `;
     await this.alertsService.sendTelegramAlert(helpMsg);
   }

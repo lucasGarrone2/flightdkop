@@ -3,9 +3,11 @@ import { SerpApiProvider } from './providers/serpapi.provider';
 import { FlightsCacheService } from './cache/flights-cache.service';
 import { RankingService, RankedFlightOffer } from './ranking/ranking.service';
 import { HistoryService } from './history/history.service';
+import { AnalyticsService } from './analytics/analytics.service';
 import { SearchFlightsDto } from './dto/search-flights.dto';
 import { SearchMultiFlightsDto } from './dto/search-multi-flights.dto';
 import { MultiFlightSearchResponse, DatePriceSummary } from './interfaces/multi-search-response.interface';
+import { DEFAULT_GENERAL_START_DATE, DEFAULT_GENERAL_END_DATE } from '../config/airports.config';
 
 @Injectable()
 export class FlightsService {
@@ -16,6 +18,7 @@ export class FlightsService {
     private readonly cacheService: FlightsCacheService,
     private readonly rankingService: RankingService,
     private readonly historyService: HistoryService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   async searchFlights(dto: SearchFlightsDto): Promise<RankedFlightOffer[]> {
@@ -39,8 +42,10 @@ export class FlightsService {
   }
 
   async searchMultiFlights(dto: SearchMultiFlightsDto): Promise<MultiFlightSearchResponse> {
-    const dates = this.generateDateRange(dto.startDate, dto.endDate);
-    const origins = dto.origins && dto.origins.length > 0 ? dto.origins : ['EZE'];
+    const startDate = dto.startDate || DEFAULT_GENERAL_START_DATE;
+    const endDate = dto.endDate || DEFAULT_GENERAL_END_DATE;
+    const dates = this.generateDateRange(startDate, endDate);
+    const origins = dto.origins && dto.origins.length > 0 ? dto.origins : ['EZE', 'AEP'];
     const destinations = dto.destinations && dto.destinations.length > 0 ? dto.destinations : ['CPH'];
 
     this.logger.log(`MultiSearch: Orígenes=[${origins.join(',')}], Destinos=[${destinations.join(',')}], Fechas=[${dates.join(', ')}]`);
@@ -94,7 +99,7 @@ export class FlightsService {
     });
 
     const rankedOffers = this.rankingService.rankOffers(rawOffers);
-    this.historyService.saveSearchHistory(origins, destinations, dto.startDate, dto.endDate, rankedOffers);
+    this.historyService.saveSearchHistory(origins, destinations, startDate, endDate, rankedOffers);
 
     const dateSummaries: DatePriceSummary[] = [];
 
@@ -138,13 +143,10 @@ export class FlightsService {
       if (sum.bestScore > globalBestScore) globalBestScore = sum.bestScore;
     });
 
-    // Tag ONLY unique standout dates to prevent repeating tags on every line
-    const lowestCount = dateSummaries.filter((s) => s.lowestPrice === globalLowestPrice).length;
     const fastestCount = dateSummaries.filter((s) => this.parseMins(s.fastestDuration) === globalFastestMins).length;
 
     dateSummaries.forEach((sum) => {
       if (sum.lowestPrice === globalLowestPrice) sum.isBestPrice = true;
-      // Only tag isFastest if it's not identical on ALL dates
       if (this.parseMins(sum.fastestDuration) === globalFastestMins && fastestCount < dateSummaries.length) {
         sum.isFastest = true;
       }
@@ -154,12 +156,17 @@ export class FlightsService {
     const cheapestOverall = [...rankedOffers].sort((a, b) => a.price - b.price)[0] || null;
     const fastestOverall = [...rankedOffers].sort((a, b) => this.parseMins(a.duration) - this.parseMins(b.duration))[0] || null;
 
+    // Run Analytics
+    const trend = await this.historyService.getPriceTrend(origins[0], destinations[0]);
+    const analytics = this.analyticsService.analyzeOffers(rankedOffers, trend.lowestPriceHistorical);
+
     return {
       bestOffer: rankedOffers[0] || null,
       cheapestOffer: cheapestOverall,
       fastestOffer: fastestOverall,
       dateSummaries,
       offers: rankedOffers,
+      analytics,
       stats: {
         totalQueries,
         cachedHits,
@@ -179,7 +186,7 @@ export class FlightsService {
     const current = new Date(startDateStr + 'T00:00:00');
     const end = new Date(endDateStr + 'T00:00:00');
 
-    const maxDays = 7;
+    const maxDays = 14;
     let count = 0;
 
     while (current <= end && count < maxDays) {
