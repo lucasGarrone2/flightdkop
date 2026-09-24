@@ -71,26 +71,28 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
     this.logger.log(`📩 Comando recibido de Telegram (${chatId}): ${text}`);
 
-    if (command === '/start' || command === '/ayuda' || command === '/help') {
-      await this.sendHelpMessage(chatId);
-      return;
-    }
-
-    if (command === '/buscar') {
-      // Usage: /buscar EZE CPH 2027-03-30
-      if (parts.length < 4) {
-        await this.alertsService.sendTelegramAlert(
-          '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/buscar ORIGEN DESTINO FECHA</code>\nEjemplo: <code>/buscar EZE CPH 2027-03-30</code>',
-        );
+    try {
+      if (command === '/start' || command === '/ayuda' || command === '/help') {
+        await this.sendHelpMessage(chatId);
         return;
       }
-      const origin = parts[1].toUpperCase();
-      const destination = parts[2].toUpperCase();
-      const departureDate = parts[3];
 
-      await this.alertsService.sendTelegramAlert(`🔍 Buscando vuelos para <b>${origin} ➔ ${destination}</b> en fecha <b>${departureDate}</b>...`);
+      if (command === '/buscar') {
+        if (parts.length < 4) {
+          await this.alertsService.sendTelegramAlert(
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/buscar ORIGEN DESTINO FECHA</code>\nEjemplo: <code>/buscar EZE CPH 2027-03-30</code>',
+          );
+          return;
+        }
 
-      try {
+        const origin = parts[1].toUpperCase();
+        const destination = parts[2].toUpperCase();
+        const departureDate = this.normalizeDate(parts[3]);
+
+        await this.alertsService.sendTelegramAlert(
+          `🔍 Buscando vuelos para <b>${origin} ➔ ${destination}</b> en fecha <b>${departureDate}</b>...`,
+        );
+
         const offers = await this.flightsService.searchFlights({
           origin,
           destination,
@@ -98,7 +100,9 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         if (!offers || offers.length === 0) {
-          await this.alertsService.sendTelegramAlert(`❌ No se encontraron vuelos para ${origin} ➔ ${destination} en ${departureDate}.`);
+          await this.alertsService.sendTelegramAlert(
+            `❌ No se encontraron vuelos para <b>${origin} ➔ ${destination}</b> en la fecha <b>${departureDate}</b>.`,
+          );
           return;
         }
 
@@ -114,28 +118,26 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         await this.alertsService.sendTelegramAlert(msg);
-      } catch (err: any) {
-        await this.alertsService.sendTelegramAlert(`❌ Error ejecutando búsqueda: ${err.message}`);
-      }
-      return;
-    }
-
-    if (command === '/rango') {
-      // Usage: /rango EZE CPH 2027-03-30 2027-04-03
-      if (parts.length < 5) {
-        await this.alertsService.sendTelegramAlert(
-          '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN</code>\nEjemplo: <code>/rango EZE CPH 2027-03-30 2027-04-03</code>',
-        );
         return;
       }
-      const origin = parts[1].toUpperCase();
-      const destination = parts[2].toUpperCase();
-      const startDate = parts[3];
-      const endDate = parts[4];
 
-      await this.alertsService.sendTelegramAlert(`🔍 Evaluando rango <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>...`);
+      if (command === '/rango') {
+        if (parts.length < 5) {
+          await this.alertsService.sendTelegramAlert(
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN</code>\nEjemplo: <code>/rango EZE CPH 2027-03-30 2027-04-03</code>',
+          );
+          return;
+        }
 
-      try {
+        const origin = parts[1].toUpperCase();
+        const destination = parts[2].toUpperCase();
+        const startDate = this.normalizeDate(parts[3]);
+        const endDate = this.normalizeDate(parts[4]);
+
+        await this.alertsService.sendTelegramAlert(
+          `🔍 Evaluando rango <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>...`,
+        );
+
         const res = await this.flightsService.searchMultiFlights({
           origins: [origin],
           destinations: [destination],
@@ -143,39 +145,42 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           endDate,
         });
 
+        if (!res.dateSummaries || res.dateSummaries.length === 0) {
+          await this.alertsService.sendTelegramAlert(`❌ No se encontraron ofertas en el rango de fechas solicitado.`);
+          return;
+        }
+
         let msg = `📅 <b>COMPARATIVA DE PRECIOS (${origin} ➔ ${destination})</b>\n\n`;
         res.dateSummaries.forEach((s) => {
           msg += `• <b>${s.date}:</b> USD $${s.lowestPrice} ${s.isBestPrice ? '🟢 (MEJOR PRECIO)' : ''}\n`;
         });
 
         if (res.bestOffer) {
-          msg += `\n🏆 <b>MEJOR OPCION GLOBAL:</b>\n`;
+          msg += `\n🏆 <b>MEJOR OPCIÓN GLOBAL:</b>\n`;
           msg += `✈️ <b>${res.bestOffer.airline}</b> - USD $${res.bestOffer.price}\n`;
           msg += `📅 Fecha: ${res.bestOffer.departureDate} (${res.bestOffer.duration})\n`;
           if (res.bestOffer.bookingUrl) msg += `<a href="${res.bestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
         }
 
         await this.alertsService.sendTelegramAlert(msg);
-      } catch (err: any) {
-        await this.alertsService.sendTelegramAlert(`❌ Error evaluando rango: ${err.message}`);
-      }
-      return;
-    }
-
-    if (command === '/argentina') {
-      // Usage: /argentina CPH 2027-03-30
-      if (parts.length < 3) {
-        await this.alertsService.sendTelegramAlert(
-          '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/argentina DESTINO FECHA</code>\nEjemplo: <code>/argentina CPH 2027-03-30</code>',
-        );
         return;
       }
-      const destination = parts[1].toUpperCase();
-      const departureDate = parts[2];
 
-      await this.alertsService.sendTelegramAlert(`🔍 Buscando desde <b>toda Argentina (EZE, AEP, COR, MDZ, ROS)</b> a <b>${destination}</b> el <b>${departureDate}</b>...`);
+      if (command === '/argentina') {
+        if (parts.length < 3) {
+          await this.alertsService.sendTelegramAlert(
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/argentina DESTINO FECHA</code>\nEjemplo: <code>/argentina CPH 2027-03-30</code>',
+          );
+          return;
+        }
 
-      try {
+        const destination = parts[1].toUpperCase();
+        const departureDate = this.normalizeDate(parts[2]);
+
+        await this.alertsService.sendTelegramAlert(
+          `🔍 Buscando desde <b>toda Argentina (EZE, AEP, COR, MDZ, ROS)</b> a <b>${destination}</b> el <b>${departureDate}</b>...`,
+        );
+
         const res = await this.flightsService.searchMultiFlights({
           origins: ['EZE', 'AEP', 'COR', 'MDZ', 'ROS'],
           destinations: [destination],
@@ -184,7 +189,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         if (!res.offers || res.offers.length === 0) {
-          await this.alertsService.sendTelegramAlert(`❌ No se encontraron vuelos disponibles.`);
+          await this.alertsService.sendTelegramAlert(`❌ No se encontraron vuelos disponibles desde Argentina.`);
           return;
         }
 
@@ -199,22 +204,33 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         await this.alertsService.sendTelegramAlert(msg);
-      } catch (err: any) {
-        await this.alertsService.sendTelegramAlert(`❌ Error en búsqueda Argentina: ${err.message}`);
+        return;
       }
-      return;
-    }
 
-    await this.sendHelpMessage(chatId);
+      await this.sendHelpMessage(chatId);
+    } catch (err: any) {
+      this.logger.error(`Error procesando comando Telegram: ${err.message}`, err.stack);
+      await this.alertsService.sendTelegramAlert(`❌ Error procesando el comando: ${err.message}`);
+    }
+  }
+
+  private normalizeDate(dateStr: string): string {
+    if (!dateStr) return dateStr;
+    let clean = dateStr.replace(/\//g, '-');
+    const parts = clean.split('-');
+    if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
+      clean = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return clean;
   }
 
   private async sendHelpMessage(chatId: number) {
     const helpMsg = `
-🤖 <b>BIENVENIDO AL ASISTENTE DE VUELOS ARGENTINA ➔ DINAMARCA</b>
+🤖 <b>ASISTENTE DE VUELOS ARGENTINA ➔ DINAMARCA</b>
 
-Comandos disponibles que podés enviarme:
+Comandos disponibles:
 
-1️⃣ <b>Búsqueda de Vuelo Específico:</b>
+1️⃣ <b>Búsqueda de Vuelo Concreto:</b>
 <code>/buscar EZE CPH 2027-03-30</code>
 
 2️⃣ <b>Comparar Rango de Fechas:</b>

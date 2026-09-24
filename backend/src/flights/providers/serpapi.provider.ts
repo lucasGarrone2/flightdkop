@@ -20,7 +20,10 @@ export class SerpApiProvider implements FlightProvider {
     }
 
     try {
-      this.logger.log(`🔍 Consultando SerpApi Google Flights: ${params.origin} -> ${params.destination} (${params.departureDate})`);
+      // Normalize date format to YYYY-MM-DD if user used slashes (e.g. 2027/03/30 or 30/03/2027)
+      const cleanDate = this.formatToISO(params.departureDate);
+
+      this.logger.log(`🔍 Consultando SerpApi Google Flights: ${params.origin} -> ${params.destination} (${cleanDate})`);
 
       const searchType = params.returnDate ? 1 : 2;
 
@@ -29,7 +32,7 @@ export class SerpApiProvider implements FlightProvider {
         type: searchType,
         departure_id: params.origin,
         arrival_id: params.destination,
-        outbound_date: params.departureDate,
+        outbound_date: cleanDate,
         adults: params.passengers || 1,
         currency: 'USD',
         hl: 'es',
@@ -38,17 +41,22 @@ export class SerpApiProvider implements FlightProvider {
       };
 
       if (params.returnDate) {
-        requestParams.return_date = params.returnDate;
+        requestParams.return_date = this.formatToISO(params.returnDate);
       }
 
       const fetchPromise = new Promise((resolve, reject) => {
-        getJson(requestParams, (data) => {
-          if (data?.error) {
-            reject(new Error(data.error));
-          } else {
-            resolve(data);
-          }
-        });
+        try {
+          getJson(requestParams, (data) => {
+            if (data?.error) {
+              const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+              reject(new Error(errMsg));
+            } else {
+              resolve(data);
+            }
+          });
+        } catch (err: any) {
+          reject(err);
+        }
       });
 
       const timeoutPromise = new Promise((_, reject) =>
@@ -72,9 +80,21 @@ export class SerpApiProvider implements FlightProvider {
 
       return offers;
     } catch (error: any) {
-      this.logger.error(`❌ Error o Timeout consultando SerpApi (${params.origin} -> ${params.destination}): ${error.message}`);
+      this.logger.error(`❌ Error consultando SerpApi (${params.origin} -> ${params.destination}): ${error.message}`);
       return [];
     }
+  }
+
+  private formatToISO(dateStr: string): string {
+    if (!dateStr) return dateStr;
+    // Replace slashes with dashes
+    let formatted = dateStr.replace(/\//g, '-');
+    // If format is DD-MM-YYYY, convert to YYYY-MM-DD
+    const parts = formatted.split('-');
+    if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
+      formatted = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return formatted;
   }
 
   private normalizeFlight(itinerary: any, params: SearchFlightsParams, index: number): FlightOffer {
@@ -102,8 +122,6 @@ export class SerpApiProvider implements FlightProvider {
 
     const isSelfTransfer = Boolean(itinerary.self_transfer || itinerary.is_self_transfer);
     const mainAirline = firstSegment?.airline || 'Varios';
-
-    // Direct Google Flights pre-filtered deeplink for this specific route and departure date
     const googleFlightsUrl = `https://www.google.com/travel/flights?q=Vuelos%20de%20${params.origin}%20a%20${params.destination}%20el%20${params.departureDate}`;
 
     return {
@@ -156,15 +174,6 @@ export class SerpApiProvider implements FlightProvider {
             departureTime: '13:05',
             arrivalTime: '06:15',
             duration: '12h 10m',
-          },
-          {
-            airline: 'Iberia Express',
-            flightNumber: 'I2 3740',
-            departureAirport: 'MAD',
-            arrivalAirport: params.destination,
-            departureTime: '08:45',
-            arrivalTime: '09:30',
-            duration: '3h 45m',
           },
         ],
       },
