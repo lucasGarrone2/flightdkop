@@ -29,11 +29,32 @@ export interface FlightOffer {
   bookingUrl?: string;
 }
 
-export interface SearchParams {
+export interface DatePriceSummary {
+  date: string;
   origin: string;
   destination: string;
-  departureDate: string;
-  returnDate?: string;
+  lowestPrice: number;
+  flightCount: number;
+  isBestPrice: boolean;
+  bestOffer: FlightOffer;
+}
+
+export interface MultiFlightSearchResponse {
+  bestOffer: FlightOffer | null;
+  dateSummaries: DatePriceSummary[];
+  offers: FlightOffer[];
+  stats: {
+    totalQueries: number;
+    cachedHits: number;
+    apiCalls: number;
+  };
+}
+
+export interface MultiSearchParams {
+  origins: string[];
+  destinations: string[];
+  startDate: string;
+  endDate: string;
   passengers: number;
   maxStops?: number;
 }
