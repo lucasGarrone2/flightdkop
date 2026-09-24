@@ -22,7 +22,6 @@ export class SerpApiProvider implements FlightProvider {
     try {
       this.logger.log(`🔍 Consultando SerpApi Google Flights: ${params.origin} -> ${params.destination} (${params.departureDate})`);
 
-      // Determine search type: 1 = Round trip, 2 = One way
       const searchType = params.returnDate ? 1 : 2;
 
       const requestParams: any = {
@@ -42,7 +41,8 @@ export class SerpApiProvider implements FlightProvider {
         requestParams.return_date = params.returnDate;
       }
 
-      const response: any = await new Promise((resolve, reject) => {
+      // 8-second timeout to prevent hanging requests
+      const fetchPromise = new Promise((resolve, reject) => {
         getJson(requestParams, (data) => {
           if (data?.error) {
             reject(new Error(data.error));
@@ -52,9 +52,15 @@ export class SerpApiProvider implements FlightProvider {
         });
       });
 
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout de 8s excedido en SerpApi')), 8000),
+      );
+
+      const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+
       const rawItineraries = [
-        ...(response.best_flights || []),
-        ...(response.other_flights || []),
+        ...(response?.best_flights || []),
+        ...(response?.other_flights || []),
       ];
 
       const offers: FlightOffer[] = rawItineraries.map((itinerary: any, index: number) =>
@@ -67,8 +73,8 @@ export class SerpApiProvider implements FlightProvider {
 
       return offers;
     } catch (error: any) {
-      this.logger.error(`❌ Error consultando SerpApi: ${error.message}`, error.stack);
-      throw error;
+      this.logger.error(`❌ Error o Timeout consultando SerpApi (${params.origin} -> ${params.destination}): ${error.message}`);
+      return []; // Return empty array on error so parallel queries don't break
     }
   }
 

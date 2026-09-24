@@ -47,75 +47,108 @@ export class FlightsService {
     let cachedHits = 0;
     let apiCalls = 0;
     const allOffers: FlightOffer[] = [];
-    const dateSummaries: DatePriceSummary[] = [];
+
+    // Construct query tasks
+    const queryTasks: Array<{
+      origin: string;
+      destination: string;
+      date: string;
+    }> = [];
 
     for (const date of dates) {
-      let lowestPriceForDate = Infinity;
-      let bestOfferForDate: FlightOffer | null = null;
-      let flightCountForDate = 0;
-
       for (const origin of origins) {
         for (const destination of destinations) {
-          totalQueries++;
-          const cacheKey = `multi:${origin}:${destination}:${date}:${dto.passengers || 1}:${dto.maxStops ?? 'any'}`;
-          let offers = this.cacheService.get(cacheKey);
+          queryTasks.push({ origin, destination, date });
+        }
+      }
+    }
 
-          if (offers) {
-            cachedHits++;
-          } else {
-            apiCalls++;
+    totalQueries = queryTasks.length;
+
+    // Execute queries in parallel batches
+    const queryResults = await Promise.all(
+      queryTasks.map(async (task) => {
+        const cacheKey = `multi:${task.origin}:${task.destination}:${task.date}:${dto.passengers || 1}:${dto.maxStops ?? 'any'}`;
+        let offers = this.cacheService.get(cacheKey);
+
+        if (offers) {
+          cachedHits++;
+          return { task, offers, isCached: true };
+        } else {
+          apiCalls++;
+          try {
             offers = await this.serpApiProvider.searchFlights({
-              origin,
-              destination,
-              departureDate: date,
+              origin: task.origin,
+              destination: task.destination,
+              departureDate: task.date,
               passengers: dto.passengers,
               maxStops: dto.maxStops,
             });
             this.cacheService.set(cacheKey, offers);
+          } catch (err: any) {
+            this.logger.warn(`Failure fetching ${task.origin}->${task.destination} on ${task.date}: ${err.message}`);
+            offers = [];
           }
+          return { task, offers, isCached: false };
+        }
+      }),
+    );
 
-          allOffers.push(...offers);
-          flightCountForDate += offers.length;
+    // Aggregate date price summaries
+    const dateSummariesMap = new Map<string, { lowestPrice: number; flightCount: number; bestOffer: FlightOffer | null }>();
 
-          for (const offer of offers) {
-            if (offer.price < lowestPriceForDate) {
-              lowestPriceForDate = offer.price;
-              bestOfferForDate = offer;
-            }
+    dates.forEach((date) => {
+      dateSummariesMap.set(date, { lowestPrice: Infinity, flightCount: 0, bestOffer: null });
+    });
+
+    queryResults.forEach(({ task, offers }) => {
+      allOffers.push(...offers);
+      const current = dateSummariesMap.get(task.date);
+
+      if (current) {
+        current.flightCount += offers.length;
+        for (const offer of offers) {
+          if (offer.price < current.lowestPrice) {
+            current.lowestPrice = offer.price;
+            current.bestOffer = offer;
           }
         }
       }
+    });
 
-      if (bestOfferForDate && lowestPriceForDate !== Infinity) {
+    const dateSummaries: DatePriceSummary[] = [];
+    dates.forEach((date) => {
+      const summary = dateSummariesMap.get(date);
+      if (summary && summary.bestOffer && summary.lowestPrice !== Infinity) {
         dateSummaries.push({
           date,
-          origin: bestOfferForDate.origin,
-          destination: bestOfferForDate.destination,
-          lowestPrice: lowestPriceForDate,
-          flightCount: flightCountForDate,
+          origin: summary.bestOffer.origin,
+          destination: summary.bestOffer.destination,
+          lowestPrice: summary.lowestPrice,
+          flightCount: summary.flightCount,
           isBestPrice: false,
-          bestOffer: bestOfferForDate,
+          bestOffer: summary.bestOffer,
         });
-      }
-    }
-
-    // Sort all offers by price ascending
-    allOffers.sort((a, b) => a.price - b.price);
-
-    // Identify overall lowest price date
-    let globalLowestPrice = Infinity;
-    let bestGlobalOffer: FlightOffer | null = null;
-
-    dateSummaries.forEach((summary) => {
-      if (summary.lowestPrice < globalLowestPrice) {
-        globalLowestPrice = summary.lowestPrice;
-        bestGlobalOffer = summary.bestOffer;
       }
     });
 
-    dateSummaries.forEach((summary) => {
-      if (summary.lowestPrice === globalLowestPrice) {
-        summary.isBestPrice = true;
+    // Sort all offers by price ASC
+    allOffers.sort((a, b) => a.price - b.price);
+
+    // Identify global lowest price
+    let globalLowestPrice = Infinity;
+    let bestGlobalOffer: FlightOffer | null = null;
+
+    dateSummaries.forEach((sum) => {
+      if (sum.lowestPrice < globalLowestPrice) {
+        globalLowestPrice = sum.lowestPrice;
+        bestGlobalOffer = sum.bestOffer;
+      }
+    });
+
+    dateSummaries.forEach((sum) => {
+      if (sum.lowestPrice === globalLowestPrice) {
+        sum.isBestPrice = true;
       }
     });
 
@@ -136,8 +169,8 @@ export class FlightsService {
     const current = new Date(startDateStr + 'T00:00:00');
     const end = new Date(endDateStr + 'T00:00:00');
 
-    // Limit maximum date range to 14 days per query to prevent exhausting limits
-    const maxDays = 14;
+    // Limit maximum date range to 7 days per batch to prevent API quota exhaustion
+    const maxDays = 7;
     let count = 0;
 
     while (current <= end && count < maxDays) {
