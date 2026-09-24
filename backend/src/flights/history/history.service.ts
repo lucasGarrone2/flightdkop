@@ -74,7 +74,8 @@ export class HistoryService {
   async createPriceAlert(
     origin: string,
     destination: string,
-    departureDate: string,
+    startDate: string,
+    endDate: string,
     targetPrice: number,
     chatId: string,
   ) {
@@ -82,7 +83,8 @@ export class HistoryService {
       data: {
         origin,
         destination,
-        departureDate,
+        startDate,
+        endDate,
         targetPrice,
         chatId,
         isActive: true,

@@ -46,7 +46,8 @@ model PriceAlert {
   id            String   @id @default(uuid())
   origin        String
   destination   String
-  departureDate String   @default("")
+  startDate     String   @default("")
+  endDate       String   @default("")
   targetPrice   Float
   chatId        String
   isActive      Boolean  @default(true)

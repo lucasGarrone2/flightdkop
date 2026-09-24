@@ -15,6 +15,7 @@ async function testWatcherCommands() {
       'EZE',
       'CPH',
       '2027-03-30',
+      '2027-04-01',
       1050,
       testChatId,
     );
@@ -24,7 +25,7 @@ async function testWatcherCommands() {
     const alerts = await historyService.getUserPriceAlerts(testChatId);
     console.log(`- Encontradas ${alerts.length} vigilancias activas:`);
     alerts.forEach((a) => {
-      console.log(`  • ${a.origin} -> ${a.destination} (${a.departureDate}) <= USD $${a.targetPrice} [ID: ${a.id}]`);
+      console.log(`  • ${a.origin} -> ${a.destination} (${a.startDate} a ${a.endDate}) <= USD $${a.targetPrice} [ID: ${a.id}]`);
     });
 
     console.log('3. Eliminando la vigilancia recién creada...');

@@ -79,19 +79,33 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         return;
       }
 
-      // --- COMMAND: /vigilar ORIGEN DESTINO FECHA PRECIO_MAX ---
+      // --- COMMAND: /vigilar ORIGEN DESTINO FECHA_INICIO [FECHA_FIN] PRECIO_MAX ---
       if (command === '/vigilar') {
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
-            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/vigilar ORIGEN DESTINO FECHA PRECIO_MAX</code>\nEjemplo: <code>/vigilar EZE CPH 2027-03-30 1100</code>',
+            '⚠️ <b>Formato incorrecto.</b>\n\nUso para Fecha Única:\n<code>/vigilar EZE CPH 2027-03-30 1100</code>\n\nUso para Rango de Fechas:\n<code>/vigilar EZE CPH 2027-03-30 2027-04-03 1100</code>',
           );
           return;
         }
 
         const origin = parts[1].toUpperCase();
         const destination = parts[2].toUpperCase();
-        const departureDate = this.normalizeDate(parts[3]);
-        const targetPrice = parseFloat(parts[4]);
+
+        let startDate = '';
+        let endDate = '';
+        let targetPrice = 0;
+
+        if (parts.length >= 6) {
+          // Range: /vigilar EZE CPH 2027-03-30 2027-04-03 1100
+          startDate = this.normalizeDate(parts[3]);
+          endDate = this.normalizeDate(parts[4]);
+          targetPrice = parseFloat(parts[5]);
+        } else {
+          // Single date: /vigilar EZE CPH 2027-03-30 1100
+          startDate = this.normalizeDate(parts[3]);
+          endDate = startDate;
+          targetPrice = parseFloat(parts[4]);
+        }
 
         if (isNaN(targetPrice) || targetPrice <= 0) {
           await this.alertsService.sendTelegramAlert('⚠️ El precio máximo debe ser un número válido.');
@@ -101,17 +115,20 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const alert = await this.historyService.createPriceAlert(
           origin,
           destination,
-          departureDate,
+          startDate,
+          endDate,
           targetPrice,
           chatId,
         );
 
+        const rangeLabel = alert.startDate === alert.endDate ? alert.startDate : `${alert.startDate} ➔ ${alert.endDate}`;
+
         let msg = `📡 <b>¡NUEVA VIGILANCIA ACTIVADA!</b>\n\n`;
         msg += `✈️ <b>Ruta:</b> ${alert.origin} ➔ ${alert.destination}\n`;
-        msg += `📅 <b>Fecha:</b> ${alert.departureDate}\n`;
+        msg += `📅 <b>Rango de Fechas:</b> ${rangeLabel}\n`;
         msg += `💰 <b>Precio Objetivo Máximo:</b> USD $${alert.targetPrice}\n`;
         msg += `🆔 <b>ID de Vigilancia:</b> <code>${alert.id}</code>\n\n`;
-        msg += `<i>El sistema monitoreará diariamente este viaje y te enviará una alerta en cuanto aparezca una oferta igual o menor a tu precio objetivo.</i>`;
+        msg += `<i>El sistema monitoreará diariamente este rango de viaje y te avisará automáticamente cuando encuentre una oferta por debajo de tu objetivo.</i>`;
 
         await this.alertsService.sendTelegramAlert(msg);
         return;
@@ -122,13 +139,14 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const alerts = await this.historyService.getUserPriceAlerts(chatId);
 
         if (!alerts || alerts.length === 0) {
-          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-30 1100</code>');
+          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-30 2027-04-03 1100</code>');
           return;
         }
 
         let msg = `📡 <b>TUS VIGILANCIAS ACTIVAS (${alerts.length})</b>\n\n`;
         alerts.forEach((alt, idx) => {
-          msg += `<b>#${idx + 1}</b> ${alt.origin} ➔ ${alt.destination} (${alt.departureDate})\n`;
+          const rangeLabel = alt.startDate === alt.endDate ? alt.startDate : `${alt.startDate} ➔ ${alt.endDate}`;
+          msg += `<b>#${idx + 1}</b> ${alt.origin} ➔ ${alt.destination} (${rangeLabel})\n`;
           msg += `💰 Máximo: <b>USD $${alt.targetPrice}</b>\n`;
           msg += `🆔 ID: <code>${alt.id}</code>\n\n`;
         });
@@ -320,19 +338,19 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     const helpMsg = `
 🤖 <b>ASISTENTE DE VUELOS ARGENTINA ➔ DINAMARCA</b>
 
-Comandos de Búsqueda:
+Comandos de Búsqueda Instantánea:
 1️⃣ <b>Búsqueda Puntual:</b>
 <code>/buscar EZE CPH 2027-03-30</code>
 
-2️⃣ <b>Comparar Rango de Fechas:</b>
+2️⃣ <b>Comparar Rango (Precio + Duración):</b>
 <code>/rango EZE CPH 2027-03-30 2027-04-03</code>
 
 3️⃣ <b>Buscar desde Toda Argentina:</b>
 <code>/argentina CPH 2027-03-30</code>
 
 Comandos de Vigilancia Continua:
-4️⃣ <b>Activar Vigilancia de Viaje:</b>
-<code>/vigilar EZE CPH 2027-03-30 1100</code>
+4️⃣ <b>Vigilar Rango de Fechas:</b>
+<code>/vigilar EZE CPH 2027-03-30 2027-04-03 1100</code>
 
 5️⃣ <b>Ver mis Vigilancias Activas:</b>
 <code>/mis_vigilancias</code>
