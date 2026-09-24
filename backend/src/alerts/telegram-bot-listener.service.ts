@@ -135,7 +135,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const endDate = this.normalizeDate(parts[4]);
 
         await this.alertsService.sendTelegramAlert(
-          `🔍 Evaluando rango <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>...`,
+          `🔍 Evaluando precios y duraciones <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>...`,
         );
 
         const res = await this.flightsService.searchMultiFlights({
@@ -150,16 +150,30 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           return;
         }
 
-        let msg = `📅 <b>COMPARATIVA DE PRECIOS (${origin} ➔ ${destination})</b>\n\n`;
+        let msg = `📅 <b>COMPARATIVA DE FECHAS (${origin} ➔ ${destination})</b>\n\n`;
         res.dateSummaries.forEach((s) => {
-          msg += `• <b>${s.date}:</b> USD $${s.lowestPrice} ${s.isBestPrice ? '🟢 (MEJOR PRECIO)' : ''}\n`;
+          const tags = [];
+          if (s.isBestPrice) tags.push('💰 Más barato');
+          if (s.isFastest) tags.push('⚡ Más rápido');
+          if (s.isBestValue) tags.push('🏆 Mejor valor');
+
+          const tagText = tags.length > 0 ? ` [${tags.join(' | ')}]` : '';
+          msg += `• <b>${s.date}:</b> $${s.lowestPrice} (⏱️ ${s.fastestDuration})${tagText}\n`;
         });
 
         if (res.bestOffer) {
-          msg += `\n🏆 <b>MEJOR OPCIÓN GLOBAL:</b>\n`;
-          msg += `✈️ <b>${res.bestOffer.airline}</b> - USD $${res.bestOffer.price}\n`;
-          msg += `📅 Fecha: ${res.bestOffer.departureDate} (${res.bestOffer.duration})\n`;
+          msg += `\n🏆 <b>OPCIÓN CON MEJOR VALOR (PRECIO/DURACIÓN):</b>\n`;
+          msg += `✈️ <b>${res.bestOffer.airline}</b> - 💰 USD $${res.bestOffer.price}\n`;
+          msg += `📅 Fecha: ${res.bestOffer.departureDate} | ⏱️ Duración: ${res.bestOffer.duration}\n`;
+          msg += `🛑 Escalas: ${res.bestOffer.stops} | Puntaje: 🏆 ${res.bestOffer.score || 0}/100 Pts\n`;
           if (res.bestOffer.bookingUrl) msg += `<a href="${res.bestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
+        }
+
+        if (res.fastestOffer && res.fastestOffer.id !== res.bestOffer?.id) {
+          msg += `\n⚡ <b>OPCIÓN MÁS RÁPIDA DETECTADA:</b>\n`;
+          msg += `✈️ <b>${res.fastestOffer.airline}</b> - USD $${res.fastestOffer.price} (⏱️ ${res.fastestOffer.duration})\n`;
+          msg += `📅 Fecha: ${res.fastestOffer.departureDate}\n`;
+          if (res.fastestOffer.bookingUrl) msg += `<a href="${res.fastestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
         }
 
         await this.alertsService.sendTelegramAlert(msg);
@@ -198,7 +212,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
         top.forEach((offer, i) => {
           msg += `<b>#${i + 1} Origen ${offer.origin}:</b> ${offer.airline} - 💰 <b>USD $${offer.price}</b>\n`;
-          msg += `⏱️ Duración: ${offer.duration} | Escalas: ${offer.stops}\n`;
+          msg += `⏱️ Duración: ${offer.duration} | Escalas: ${offer.stops} | 🏆 ${offer.score || 0}/100 Pts\n`;
           if (offer.bookingUrl) msg += `<a href="${offer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
           msg += `\n`;
         });
@@ -233,7 +247,7 @@ Comandos disponibles:
 1️⃣ <b>Búsqueda de Vuelo Concreto:</b>
 <code>/buscar EZE CPH 2027-03-30</code>
 
-2️⃣ <b>Comparar Rango de Fechas:</b>
+2️⃣ <b>Comparar Rango (Precio + Duración):</b>
 <code>/rango EZE CPH 2027-03-30 2027-04-03</code>
 
 3️⃣ <b>Buscar desde Toda Argentina:</b>

@@ -89,71 +89,76 @@ export class FlightsService {
       }),
     );
 
-    const dateSummariesMap = new Map<string, { lowestPrice: number; flightCount: number; bestOffer: any | null }>();
-
-    dates.forEach((date) => {
-      dateSummariesMap.set(date, { lowestPrice: Infinity, flightCount: 0, bestOffer: null });
-    });
-
-    queryResults.forEach(({ task, offers }) => {
+    queryResults.forEach(({ offers }) => {
       rawOffers.push(...offers);
-      const current = dateSummariesMap.get(task.date);
-
-      if (current) {
-        current.flightCount += offers.length;
-        for (const offer of offers) {
-          if (offer.price < current.lowestPrice) {
-            current.lowestPrice = offer.price;
-            current.bestOffer = offer;
-          }
-        }
-      }
     });
 
-    // Rank all retrieved offers using RankingService
+    // Rank all retrieved offers across dates
     const rankedOffers = this.rankingService.rankOffers(rawOffers);
 
-    // Save history asynchronously in DB
+    // Save history in DB
     this.historyService.saveSearchHistory(origins, destinations, dto.startDate, dto.endDate, rankedOffers);
 
+    // Group by date
     const dateSummaries: DatePriceSummary[] = [];
+
     dates.forEach((date) => {
-      const summary = dateSummariesMap.get(date);
-      if (summary && summary.bestOffer && summary.lowestPrice !== Infinity) {
+      const offersForDate = rankedOffers.filter((o) => o.departureDate === date);
+      if (offersForDate.length > 0) {
+        // Cheapest offer for date
+        const cheapestOffer = [...offersForDate].sort((a, b) => a.price - b.price)[0];
+        // Fastest offer for date
+        const fastestOffer = [...offersForDate].sort(
+          (a, b) => this.parseMins(a.duration) - this.parseMins(b.duration),
+        )[0];
+        // Best score (smart value) offer for date
+        const bestValueOffer = [...offersForDate].sort((a, b) => b.score - a.score)[0];
+
         dateSummaries.push({
           date,
-          origin: summary.bestOffer.origin,
-          destination: summary.bestOffer.destination,
-          lowestPrice: summary.lowestPrice,
-          flightCount: summary.flightCount,
+          origin: bestValueOffer.origin,
+          destination: bestValueOffer.destination,
+          lowestPrice: cheapestOffer.price,
+          fastestDuration: fastestOffer.duration,
+          bestScore: bestValueOffer.score,
+          flightCount: offersForDate.length,
           isBestPrice: false,
-          bestOffer: summary.bestOffer,
+          isFastest: false,
+          isBestValue: false,
+          bestPriceOffer: cheapestOffer,
+          fastestOffer,
+          bestValueOffer,
         });
       }
     });
 
-    // Sort ranked offers by score descending (smartest value first)
+    // Sort ranked offers by score DESC
     rankedOffers.sort((a, b) => b.score - a.score);
 
-    // Identify global lowest price
     let globalLowestPrice = Infinity;
-    let bestGlobalOffer: any | null = null;
+    let globalFastestMins = Infinity;
+    let globalBestScore = -1;
 
     dateSummaries.forEach((sum) => {
-      if (sum.lowestPrice < globalLowestPrice) {
-        globalLowestPrice = sum.lowestPrice;
-        bestGlobalOffer = sum.bestOffer;
-      }
+      if (sum.lowestPrice < globalLowestPrice) globalLowestPrice = sum.lowestPrice;
+      const durMins = this.parseMins(sum.fastestDuration);
+      if (durMins < globalFastestMins) globalFastestMins = durMins;
+      if (sum.bestScore > globalBestScore) globalBestScore = sum.bestScore;
     });
 
     dateSummaries.forEach((sum) => {
-      if (sum.lowestPrice === globalLowestPrice) {
-        sum.isBestPrice = true;
-      }
+      if (sum.lowestPrice === globalLowestPrice) sum.isBestPrice = true;
+      if (this.parseMins(sum.fastestDuration) === globalFastestMins) sum.isFastest = true;
+      if (sum.bestScore === globalBestScore) sum.isBestValue = true;
     });
+
+    const cheapestOverall = [...rankedOffers].sort((a, b) => a.price - b.price)[0] || null;
+    const fastestOverall = [...rankedOffers].sort((a, b) => this.parseMins(a.duration) - this.parseMins(b.duration))[0] || null;
 
     return {
-      bestOffer: bestGlobalOffer || rankedOffers[0] || null,
+      bestOffer: rankedOffers[0] || null,
+      cheapestOffer: cheapestOverall,
+      fastestOffer: fastestOverall,
       dateSummaries,
       offers: rankedOffers,
       stats: {
@@ -162,6 +167,12 @@ export class FlightsService {
         apiCalls,
       },
     };
+  }
+
+  private parseMins(dur: string): number {
+    const h = dur.match(/(\d+)h/);
+    const m = dur.match(/(\d+)m/);
+    return (h ? parseInt(h[1], 10) : 0) * 60 + (m ? parseInt(m[1], 10) : 0);
   }
 
   private generateDateRange(startDateStr: string, endDateStr: string): string[] {

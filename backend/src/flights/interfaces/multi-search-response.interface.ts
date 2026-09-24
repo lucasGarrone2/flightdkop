@@ -5,13 +5,21 @@ export interface DatePriceSummary {
   origin: string;
   destination: string;
   lowestPrice: number;
+  fastestDuration: string;
+  bestScore: number;
   flightCount: number;
   isBestPrice: boolean;
-  bestOffer: FlightOffer;
+  isFastest: boolean;
+  isBestValue: boolean;
+  bestPriceOffer: FlightOffer;
+  fastestOffer: FlightOffer;
+  bestValueOffer: FlightOffer;
 }
 
 export interface MultiFlightSearchResponse {
-  bestOffer: FlightOffer | null;
+  bestOffer: FlightOffer | null; // Overall best value offer
+  cheapestOffer: FlightOffer | null;
+  fastestOffer: FlightOffer | null;
   dateSummaries: DatePriceSummary[];
   offers: FlightOffer[];
   stats: {

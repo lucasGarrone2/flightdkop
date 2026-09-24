@@ -26,5 +26,6 @@ export interface FlightOffer {
   stops: number;
   segments: FlightSegment[];
   selfTransfer: boolean;
+  score?: number;
   bookingUrl?: string;
 }
