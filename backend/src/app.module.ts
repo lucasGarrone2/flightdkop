@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { DatabaseModule } from './database/database.module';
 import { FlightsModule } from './flights/flights.module';
 
 @Module({
@@ -10,6 +11,7 @@ import { FlightsModule } from './flights/flights.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    DatabaseModule,
     FlightsModule,
   ],
   controllers: [AppController],

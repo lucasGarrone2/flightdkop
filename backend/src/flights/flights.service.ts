@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SerpApiProvider } from './providers/serpapi.provider';
 import { FlightsCacheService } from './cache/flights-cache.service';
+import { RankingService, RankedFlightOffer } from './ranking/ranking.service';
+import { HistoryService } from './history/history.service';
 import { SearchFlightsDto } from './dto/search-flights.dto';
 import { SearchMultiFlightsDto } from './dto/search-multi-flights.dto';
-import { FlightOffer } from './interfaces/flight-offer.interface';
 import { MultiFlightSearchResponse, DatePriceSummary } from './interfaces/multi-search-response.interface';
 
 @Injectable()
@@ -13,27 +14,28 @@ export class FlightsService {
   constructor(
     private readonly serpApiProvider: SerpApiProvider,
     private readonly cacheService: FlightsCacheService,
+    private readonly rankingService: RankingService,
+    private readonly historyService: HistoryService,
   ) {}
 
-  async searchFlights(dto: SearchFlightsDto): Promise<FlightOffer[]> {
+  async searchFlights(dto: SearchFlightsDto): Promise<RankedFlightOffer[]> {
     const cacheKey = `single:${dto.origin}:${dto.destination}:${dto.departureDate}:${dto.passengers || 1}:${dto.maxStops ?? 'any'}`;
-    const cached = this.cacheService.get(cacheKey);
-    if (cached) {
-      return cached;
+    let offers = this.cacheService.get(cacheKey);
+
+    if (!offers) {
+      offers = await this.serpApiProvider.searchFlights({
+        origin: dto.origin,
+        destination: dto.destination,
+        departureDate: dto.departureDate,
+        returnDate: dto.returnDate,
+        passengers: dto.passengers,
+        maxStops: dto.maxStops,
+      });
+      this.cacheService.set(cacheKey, offers);
     }
 
-    const offers = await this.serpApiProvider.searchFlights({
-      origin: dto.origin,
-      destination: dto.destination,
-      departureDate: dto.departureDate,
-      returnDate: dto.returnDate,
-      passengers: dto.passengers,
-      maxStops: dto.maxStops,
-    });
-
-    const sorted = offers.sort((a, b) => a.price - b.price);
-    this.cacheService.set(cacheKey, sorted);
-    return sorted;
+    const ranked = this.rankingService.rankOffers(offers);
+    return ranked.sort((a, b) => b.score - a.score);
   }
 
   async searchMultiFlights(dto: SearchMultiFlightsDto): Promise<MultiFlightSearchResponse> {
@@ -46,14 +48,9 @@ export class FlightsService {
     let totalQueries = 0;
     let cachedHits = 0;
     let apiCalls = 0;
-    const allOffers: FlightOffer[] = [];
+    const rawOffers: any[] = [];
 
-    // Construct query tasks
-    const queryTasks: Array<{
-      origin: string;
-      destination: string;
-      date: string;
-    }> = [];
+    const queryTasks: Array<{ origin: string; destination: string; date: string }> = [];
 
     for (const date of dates) {
       for (const origin of origins) {
@@ -65,7 +62,6 @@ export class FlightsService {
 
     totalQueries = queryTasks.length;
 
-    // Execute queries in parallel batches
     const queryResults = await Promise.all(
       queryTasks.map(async (task) => {
         const cacheKey = `multi:${task.origin}:${task.destination}:${task.date}:${dto.passengers || 1}:${dto.maxStops ?? 'any'}`;
@@ -73,7 +69,7 @@ export class FlightsService {
 
         if (offers) {
           cachedHits++;
-          return { task, offers, isCached: true };
+          return { task, offers };
         } else {
           apiCalls++;
           try {
@@ -86,23 +82,21 @@ export class FlightsService {
             });
             this.cacheService.set(cacheKey, offers);
           } catch (err: any) {
-            this.logger.warn(`Failure fetching ${task.origin}->${task.destination} on ${task.date}: ${err.message}`);
             offers = [];
           }
-          return { task, offers, isCached: false };
+          return { task, offers };
         }
       }),
     );
 
-    // Aggregate date price summaries
-    const dateSummariesMap = new Map<string, { lowestPrice: number; flightCount: number; bestOffer: FlightOffer | null }>();
+    const dateSummariesMap = new Map<string, { lowestPrice: number; flightCount: number; bestOffer: any | null }>();
 
     dates.forEach((date) => {
       dateSummariesMap.set(date, { lowestPrice: Infinity, flightCount: 0, bestOffer: null });
     });
 
     queryResults.forEach(({ task, offers }) => {
-      allOffers.push(...offers);
+      rawOffers.push(...offers);
       const current = dateSummariesMap.get(task.date);
 
       if (current) {
@@ -115,6 +109,12 @@ export class FlightsService {
         }
       }
     });
+
+    // Rank all retrieved offers using RankingService
+    const rankedOffers = this.rankingService.rankOffers(rawOffers);
+
+    // Save history asynchronously in DB
+    this.historyService.saveSearchHistory(origins, destinations, dto.startDate, dto.endDate, rankedOffers);
 
     const dateSummaries: DatePriceSummary[] = [];
     dates.forEach((date) => {
@@ -132,12 +132,12 @@ export class FlightsService {
       }
     });
 
-    // Sort all offers by price ASC
-    allOffers.sort((a, b) => a.price - b.price);
+    // Sort ranked offers by score descending (smartest value first)
+    rankedOffers.sort((a, b) => b.score - a.score);
 
     // Identify global lowest price
     let globalLowestPrice = Infinity;
-    let bestGlobalOffer: FlightOffer | null = null;
+    let bestGlobalOffer: any | null = null;
 
     dateSummaries.forEach((sum) => {
       if (sum.lowestPrice < globalLowestPrice) {
@@ -153,9 +153,9 @@ export class FlightsService {
     });
 
     return {
-      bestOffer: bestGlobalOffer || allOffers[0] || null,
+      bestOffer: bestGlobalOffer || rankedOffers[0] || null,
       dateSummaries,
-      offers: allOffers,
+      offers: rankedOffers,
       stats: {
         totalQueries,
         cachedHits,
@@ -169,7 +169,6 @@ export class FlightsService {
     const current = new Date(startDateStr + 'T00:00:00');
     const end = new Date(endDateStr + 'T00:00:00');
 
-    // Limit maximum date range to 7 days per batch to prevent API quota exhaustion
     const maxDays = 7;
     let count = 0;
 

@@ -1,0 +1,55 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model FlightSearch {
+  id            String         @id @default(uuid())
+  origins       String
+  destinations  String
+  startDate     String
+  endDate       String
+  searchedAt    DateTime       @default(now())
+  results       FlightResult[]
+
+  @@map("flight_searches")
+}
+
+model FlightResult {
+  id             String       @id @default(uuid())
+  searchId       String
+  search         FlightSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  provider       String
+  price          Float
+  currency       String
+  airline        String
+  origin         String
+  destination    String
+  departureDate  String
+  departureTime  String
+  arrivalTime    String
+  duration       String
+  stops          Int
+  isSelfTransfer Boolean      @default(false)
+  score          Float        @default(0)
+  bookingUrl     String?
+  createdAt      DateTime     @default(now())
+
+  @@map("flight_results")
+}
+
+model PriceAlert {
+  id          String   @id @default(uuid())
+  origin      String
+  destination String
+  targetPrice Float
+  chatId      String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("price_alerts")
+}

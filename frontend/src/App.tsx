@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import styles from './App.module.css';
 import type { MultiFlightSearchResponse, MultiSearchParams } from './types/flight';
 
 const ARGENTINA_AIRPORTS = [
-  { code: 'EZE', name: 'Ezeiza', city: 'Buenos Aires (EZE)' },
-  { code: 'AEP', name: 'Aeroparque', city: 'Buenos Aires (AEP)' },
-  { code: 'COR', name: 'Córdoba', city: 'Córdoba (COR)' },
-  { code: 'MDZ', name: 'Mendoza', city: 'Mendoza (MDZ)' },
-  { code: 'ROS', name: 'Rosario', city: 'Rosario (ROS)' },
+  { code: 'EZE', name: 'Ezeiza' },
+  { code: 'AEP', name: 'Aeroparque' },
+  { code: 'COR', name: 'Córdoba' },
+  { code: 'MDZ', name: 'Mendoza' },
+  { code: 'ROS', name: 'Rosario' },
 ];
 
 const DENMARK_AIRPORTS = [
@@ -16,6 +16,8 @@ const DENMARK_AIRPORTS = [
   { code: 'MMX', name: 'Malmö (MMX - Suecia)' },
   { code: 'HAM', name: 'Hamburgo (HAM - Alemania)' },
 ];
+
+type SortMode = 'score' | 'price' | 'duration';
 
 export const App: React.FC = () => {
   const [params, setParams] = useState<MultiSearchParams>({
@@ -30,12 +32,13 @@ export const App: React.FC = () => {
   const [response, setResponse] = useState<MultiFlightSearchResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('score');
 
   const toggleOrigin = (code: string) => {
     setParams((prev) => {
       const exists = prev.origins.includes(code);
       if (exists) {
-        if (prev.origins.length === 1) return prev; // Keep at least one
+        if (prev.origins.length === 1) return prev;
         return { ...prev, origins: prev.origins.filter((o) => o !== code) };
       } else {
         return { ...prev, origins: [...prev.origins, code] };
@@ -79,11 +82,31 @@ export const App: React.FC = () => {
     }
   };
 
+  const sortedOffers = useMemo(() => {
+    if (!response || !response.offers) return [];
+    const list = [...response.offers];
+
+    if (sortMode === 'score') {
+      return list.sort((a, b) => (b.score || 0) - (a.score || 0));
+    } else if (sortMode === 'price') {
+      return list.sort((a, b) => a.price - b.price);
+    } else if (sortMode === 'duration') {
+      return list.sort((a, b) => parseMins(a.duration) - parseMins(b.duration));
+    }
+    return list;
+  }, [response, sortMode]);
+
+  function parseMins(dur: string): number {
+    const h = dur.match(/(\d+)h/);
+    const m = dur.match(/(\d+)m/);
+    return (h ? parseInt(h[1], 10) : 0) * 60 + (m ? parseInt(m[1], 10) : 0);
+  }
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
         <h1>✈️ Argentina → Dinamarca Finder</h1>
-        <p>Búsqueda inteligente multi-aeropuerto, rango de fechas y optimización de precios</p>
+        <p>Búsqueda inteligente multi-aeropuerto, rango de fechas y ranking de mejor valor</p>
       </header>
 
       <div className={styles.card}>
@@ -165,7 +188,7 @@ export const App: React.FC = () => {
           </div>
 
           <button type="submit" className={styles.searchButton} disabled={loading}>
-            {loading ? '🔍 Buscando mejores alternativas...' : '✈️ BUSCAR OFERTAS Y COMPARAR RANGOS'}
+            {loading ? '🔍 Buscando mejores alternativas...' : '✈️ BUSCAR OFERTAS Y RANKING DE VALOR'}
           </button>
         </form>
       </div>
@@ -174,7 +197,7 @@ export const App: React.FC = () => {
 
       {loading && (
         <div className={styles.loading}>
-          🔄 Consultando fechas y combinaciones de aeropuertos...
+          🔄 Consultando combinaciones y calculando ranking inteligente...
         </div>
       )}
 
@@ -204,16 +227,44 @@ export const App: React.FC = () => {
             </div>
           </div>
 
+          {/* Results Header with Sorting Controls */}
+          <div className={styles.resultsHeader}>
+            <h3>✈️ Resultados Encontrados ({sortedOffers.length} opciones)</h3>
+            <div className={styles.sortControls}>
+              <button
+                className={`${styles.sortTab} ${sortMode === 'score' ? styles.sortTabActive : ''}`}
+                onClick={() => setSortMode('score')}
+              >
+                🏆 Mejor Valor
+              </button>
+              <button
+                className={`${styles.sortTab} ${sortMode === 'price' ? styles.sortTabActive : ''}`}
+                onClick={() => setSortMode('price')}
+              >
+                💰 Más Baratos
+              </button>
+              <button
+                className={`${styles.sortTab} ${sortMode === 'duration' ? styles.sortTabActive : ''}`}
+                onClick={() => setSortMode('duration')}
+              >
+                ⚡ Más Rápidos
+              </button>
+            </div>
+          </div>
+
           {/* Results List */}
           <div className={styles.resultsSection}>
-            <h3>✈️ Resultados Encontrados ({response.offers.length} opciones)</h3>
-
-            {response.offers.map((offer) => (
+            {sortedOffers.map((offer) => (
               <div key={offer.id} className={styles.flightCard}>
                 <div className={styles.mainInfo}>
                   <div className={styles.airlineRow}>
                     {offer.airlineLogo && <img src={offer.airlineLogo} alt={offer.airline} />}
                     <span className={styles.airlineName}>{offer.airline}</span>
+
+                    {offer.score !== undefined && (
+                      <span className={styles.scoreBadge}>🏆 {offer.score}/100 Pts</span>
+                    )}
+
                     {offer.selfTransfer && (
                       <span className={styles.selfTransferBadge}>
                         ⚠️ SELF-TRANSFER (Vuelos independientes)
@@ -261,7 +312,7 @@ export const App: React.FC = () => {
                       rel="noopener noreferrer"
                       className={styles.bookButton}
                     >
-                      Ver en Google Flights
+                      Ver en Google Flights ↗
                     </a>
                   )}
                 </div>
