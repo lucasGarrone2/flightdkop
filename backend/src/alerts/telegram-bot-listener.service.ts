@@ -153,16 +153,14 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         let msg = `📅 <b>COMPARATIVA DE FECHAS (${origin} ➔ ${destination})</b>\n\n`;
         res.dateSummaries.forEach((s) => {
           const tags = [];
-          if (s.isBestPrice) tags.push('💰 Más barato');
-          if (s.isFastest) tags.push('⚡ Más rápido');
-          if (s.isBestValue) tags.push('🏆 Mejor valor');
-
+          if (s.isBestPrice) tags.push('🟢 Más barato');
+          if (s.isFastest && !s.isBestPrice) tags.push('⚡ Más rápido');
           const tagText = tags.length > 0 ? ` [${tags.join(' | ')}]` : '';
           msg += `• <b>${s.date}:</b> $${s.lowestPrice} (⏱️ ${s.fastestDuration})${tagText}\n`;
         });
 
         if (res.bestOffer) {
-          msg += `\n🏆 <b>OPCIÓN CON MEJOR VALOR (PRECIO/DURACIÓN):</b>\n`;
+          msg += `\n🏆 <b>OPCIÓN MEJOR RANKING (PRECIO/DURACIÓN):</b>\n`;
           msg += `✈️ <b>${res.bestOffer.airline}</b> - 💰 USD $${res.bestOffer.price}\n`;
           msg += `📅 Fecha: ${res.bestOffer.departureDate} | ⏱️ Duración: ${res.bestOffer.duration}\n`;
           msg += `🛑 Escalas: ${res.bestOffer.stops} | Puntaje: 🏆 ${res.bestOffer.score || 0}/100 Pts\n`;
@@ -170,11 +168,13 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         }
 
         if (res.fastestOffer && res.fastestOffer.id !== res.bestOffer?.id) {
-          msg += `\n⚡ <b>OPCIÓN MÁS RÁPIDA DETECTADA:</b>\n`;
+          msg += `\n⚡ <b>OPCIÓN MÁS RÁPIDA:</b>\n`;
           msg += `✈️ <b>${res.fastestOffer.airline}</b> - USD $${res.fastestOffer.price} (⏱️ ${res.fastestOffer.duration})\n`;
           msg += `📅 Fecha: ${res.fastestOffer.departureDate}\n`;
           if (res.fastestOffer.bookingUrl) msg += `<a href="${res.fastestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
         }
+
+        msg += `\n💡 <i>Nota: Precios en USD netos retornados por la API. Al pagar en pesos en Argentina con tarjeta local se aplican impuestos locales (Impuesto PAÍS / Percepciones).</i>`;
 
         await this.alertsService.sendTelegramAlert(msg);
         return;

@@ -93,25 +93,18 @@ export class FlightsService {
       rawOffers.push(...offers);
     });
 
-    // Rank all retrieved offers across dates
     const rankedOffers = this.rankingService.rankOffers(rawOffers);
-
-    // Save history in DB
     this.historyService.saveSearchHistory(origins, destinations, dto.startDate, dto.endDate, rankedOffers);
 
-    // Group by date
     const dateSummaries: DatePriceSummary[] = [];
 
     dates.forEach((date) => {
       const offersForDate = rankedOffers.filter((o) => o.departureDate === date);
       if (offersForDate.length > 0) {
-        // Cheapest offer for date
         const cheapestOffer = [...offersForDate].sort((a, b) => a.price - b.price)[0];
-        // Fastest offer for date
         const fastestOffer = [...offersForDate].sort(
           (a, b) => this.parseMins(a.duration) - this.parseMins(b.duration),
         )[0];
-        // Best score (smart value) offer for date
         const bestValueOffer = [...offersForDate].sort((a, b) => b.score - a.score)[0];
 
         dateSummaries.push({
@@ -132,7 +125,6 @@ export class FlightsService {
       }
     });
 
-    // Sort ranked offers by score DESC
     rankedOffers.sort((a, b) => b.score - a.score);
 
     let globalLowestPrice = Infinity;
@@ -146,9 +138,16 @@ export class FlightsService {
       if (sum.bestScore > globalBestScore) globalBestScore = sum.bestScore;
     });
 
+    // Tag ONLY unique standout dates to prevent repeating tags on every line
+    const lowestCount = dateSummaries.filter((s) => s.lowestPrice === globalLowestPrice).length;
+    const fastestCount = dateSummaries.filter((s) => this.parseMins(s.fastestDuration) === globalFastestMins).length;
+
     dateSummaries.forEach((sum) => {
       if (sum.lowestPrice === globalLowestPrice) sum.isBestPrice = true;
-      if (this.parseMins(sum.fastestDuration) === globalFastestMins) sum.isFastest = true;
+      // Only tag isFastest if it's not identical on ALL dates
+      if (this.parseMins(sum.fastestDuration) === globalFastestMins && fastestCount < dateSummaries.length) {
+        sum.isFastest = true;
+      }
       if (sum.bestScore === globalBestScore) sum.isBestValue = true;
     });
 
