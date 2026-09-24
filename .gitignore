@@ -24,3 +24,8 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 *.log
+
+# Database
+*.db
+*.db-journal
+
