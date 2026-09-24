@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: flight-finder-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: DATABASE_URL
+        value: "file:./dev.db"
