@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { FlightsService } from '../flights/flights.service';
+import { HistoryService } from '../flights/history/history.service';
 import { AlertsService } from './alerts.service';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
   constructor(
     private readonly configService: ConfigService,
     private readonly flightsService: FlightsService,
+    private readonly historyService: HistoryService,
     private readonly alertsService: AlertsService,
   ) {}
 
@@ -61,7 +63,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
   }
 
   private async handleMessage(message: any) {
-    const chatId = message.chat.id;
+    const chatId = String(message.chat.id);
     const text: string = (message.text || '').trim();
 
     if (!text.startsWith('/')) return;
@@ -77,6 +79,80 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         return;
       }
 
+      // --- COMMAND: /vigilar ORIGEN DESTINO FECHA PRECIO_MAX ---
+      if (command === '/vigilar') {
+        if (parts.length < 5) {
+          await this.alertsService.sendTelegramAlert(
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/vigilar ORIGEN DESTINO FECHA PRECIO_MAX</code>\nEjemplo: <code>/vigilar EZE CPH 2027-03-30 1100</code>',
+          );
+          return;
+        }
+
+        const origin = parts[1].toUpperCase();
+        const destination = parts[2].toUpperCase();
+        const departureDate = this.normalizeDate(parts[3]);
+        const targetPrice = parseFloat(parts[4]);
+
+        if (isNaN(targetPrice) || targetPrice <= 0) {
+          await this.alertsService.sendTelegramAlert('⚠️ El precio máximo debe ser un número válido.');
+          return;
+        }
+
+        const alert = await this.historyService.createPriceAlert(
+          origin,
+          destination,
+          departureDate,
+          targetPrice,
+          chatId,
+        );
+
+        let msg = `📡 <b>¡NUEVA VIGILANCIA ACTIVADA!</b>\n\n`;
+        msg += `✈️ <b>Ruta:</b> ${alert.origin} ➔ ${alert.destination}\n`;
+        msg += `📅 <b>Fecha:</b> ${alert.departureDate}\n`;
+        msg += `💰 <b>Precio Objetivo Máximo:</b> USD $${alert.targetPrice}\n`;
+        msg += `🆔 <b>ID de Vigilancia:</b> <code>${alert.id}</code>\n\n`;
+        msg += `<i>El sistema monitoreará diariamente este viaje y te enviará una alerta en cuanto aparezca una oferta igual o menor a tu precio objetivo.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg);
+        return;
+      }
+
+      // --- COMMAND: /mis_vigilancias ---
+      if (command === '/mis_vigilancias' || command === '/vigilancias') {
+        const alerts = await this.historyService.getUserPriceAlerts(chatId);
+
+        if (!alerts || alerts.length === 0) {
+          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-30 1100</code>');
+          return;
+        }
+
+        let msg = `📡 <b>TUS VIGILANCIAS ACTIVAS (${alerts.length})</b>\n\n`;
+        alerts.forEach((alt, idx) => {
+          msg += `<b>#${idx + 1}</b> ${alt.origin} ➔ ${alt.destination} (${alt.departureDate})\n`;
+          msg += `💰 Máximo: <b>USD $${alt.targetPrice}</b>\n`;
+          msg += `🆔 ID: <code>${alt.id}</code>\n\n`;
+        });
+
+        msg += `<i>Para borrar una vigilancia, enviá: <code>/borrar_vigilancia ID</code></i>`;
+        await this.alertsService.sendTelegramAlert(msg);
+        return;
+      }
+
+      // --- COMMAND: /borrar_vigilancia ID ---
+      if (command === '/borrar_vigilancia' || command === '/eliminar_vigilancia') {
+        if (parts.length < 2) {
+          await this.alertsService.sendTelegramAlert('⚠️ Debés indicar el ID de la vigilancia. Ejemplo: <code>/borrar_vigilancia ID</code>');
+          return;
+        }
+
+        const alertId = parts[1];
+        await this.historyService.deletePriceAlert(alertId, chatId);
+
+        await this.alertsService.sendTelegramAlert(`🗑️ <b>Vigilancia desactivada con éxito.</b> (ID: <code>${alertId}</code>)`);
+        return;
+      }
+
+      // --- COMMAND: /buscar ---
       if (command === '/buscar') {
         if (parts.length < 4) {
           await this.alertsService.sendTelegramAlert(
@@ -121,6 +197,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         return;
       }
 
+      // --- COMMAND: /rango ---
       if (command === '/rango') {
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
@@ -180,6 +257,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         return;
       }
 
+      // --- COMMAND: /argentina ---
       if (command === '/argentina') {
         if (parts.length < 3) {
           await this.alertsService.sendTelegramAlert(
@@ -238,23 +316,29 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     return clean;
   }
 
-  private async sendHelpMessage(chatId: number) {
+  private async sendHelpMessage(chatId: string) {
     const helpMsg = `
 🤖 <b>ASISTENTE DE VUELOS ARGENTINA ➔ DINAMARCA</b>
 
-Comandos disponibles:
-
-1️⃣ <b>Búsqueda de Vuelo Concreto:</b>
+Comandos de Búsqueda:
+1️⃣ <b>Búsqueda Puntual:</b>
 <code>/buscar EZE CPH 2027-03-30</code>
 
-2️⃣ <b>Comparar Rango (Precio + Duración):</b>
+2️⃣ <b>Comparar Rango de Fechas:</b>
 <code>/rango EZE CPH 2027-03-30 2027-04-03</code>
 
 3️⃣ <b>Buscar desde Toda Argentina:</b>
 <code>/argentina CPH 2027-03-30</code>
 
-4️⃣ <b>Menú de Ayuda:</b>
-<code>/ayuda</code>
+Comandos de Vigilancia Continua:
+4️⃣ <b>Activar Vigilancia de Viaje:</b>
+<code>/vigilar EZE CPH 2027-03-30 1100</code>
+
+5️⃣ <b>Ver mis Vigilancias Activas:</b>
+<code>/mis_vigilancias</code>
+
+6️⃣ <b>Desactivar una Vigilancia:</b>
+<code>/borrar_vigilancia ID</code>
 `;
     await this.alertsService.sendTelegramAlert(helpMsg);
   }

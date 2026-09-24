@@ -68,4 +68,53 @@ export class HistoryService {
       return { lowestPriceHistorical: 0, totalSearches: 0 };
     }
   }
+
+  // --- Price Watcher CRUD ---
+
+  async createPriceAlert(
+    origin: string,
+    destination: string,
+    departureDate: string,
+    targetPrice: number,
+    chatId: string,
+  ) {
+    return this.prisma.priceAlert.create({
+      data: {
+        origin,
+        destination,
+        departureDate,
+        targetPrice,
+        chatId,
+        isActive: true,
+      },
+    });
+  }
+
+  async getUserPriceAlerts(chatId: string) {
+    return this.prisma.priceAlert.findMany({
+      where: {
+        chatId,
+        isActive: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async deletePriceAlert(alertId: string, chatId: string) {
+    return this.prisma.priceAlert.updateMany({
+      where: {
+        id: alertId,
+        chatId,
+      },
+      data: {
+        isActive: false,
+      },
+    });
+  }
+
+  async getActivePriceAlerts() {
+    return this.prisma.priceAlert.findMany({
+      where: { isActive: true },
+    });
+  }
 }
