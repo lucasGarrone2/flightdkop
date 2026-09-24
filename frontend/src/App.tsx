@@ -33,6 +33,7 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('score');
+  const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
 
   const toggleOrigin = (code: string) => {
     setParams((prev) => {
@@ -79,6 +80,21 @@ export const App: React.FC = () => {
       setError(err.message || 'No se pudo conectar con el servidor backend.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const triggerTelegramAlert = async () => {
+    setTelegramStatus('🚀 Ejecutando escaneo automático y enviando mensaje a Telegram...');
+    try {
+      const res = await fetch('http://localhost:3000/flights/trigger-alert-scan', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramStatus('✅ ¡Escaneo completado! Si la oferta fue oportuna, habrás recibido la notificación en Telegram.');
+      } else {
+        setTelegramStatus(`❌ Error en escaneo: ${data.error}`);
+      }
+    } catch (err: any) {
+      setTelegramStatus(`❌ Error conectando con el servidor: ${err.message}`);
     }
   };
 
@@ -187,10 +203,27 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          <button type="submit" className={styles.searchButton} disabled={loading}>
-            {loading ? '🔍 Buscando mejores alternativas...' : '✈️ BUSCAR OFERTAS Y RANKING DE VALOR'}
-          </button>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button type="submit" className={styles.searchButton} disabled={loading} style={{ flex: 2 }}>
+              {loading ? '🔍 Buscando mejores alternativas...' : '✈️ BUSCAR OFERTAS Y RANKING DE VALOR'}
+            </button>
+
+            <button
+              type="button"
+              onClick={triggerTelegramAlert}
+              className={styles.searchButton}
+              style={{ flex: 1, background: '#0f172a' }}
+            >
+              📱 PROBAR ALERTA TELEGRAM
+            </button>
+          </div>
         </form>
+
+        {telegramStatus && (
+          <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f8fafc', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid #cbd5e1' }}>
+            {telegramStatus}
+          </div>
+        )}
       </div>
 
       {error && <div className={styles.noResults} style={{ color: '#dc2626' }}>❌ {error}</div>}
