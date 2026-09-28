@@ -25,7 +25,8 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
   ) {}
 
   onModuleInit() {
-    const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    const rawToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    const token = rawToken?.trim()?.replace(/^["']|["']$/g, '');
     if (token) {
       this.logger.log('🤖 Iniciando escucha interactiva de Telegram (Long Polling)...');
       this.isPolling = true;
@@ -40,7 +41,8 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
   }
 
   private async pollUpdates() {
-    const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    const rawToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    const token = rawToken?.trim()?.replace(/^["']|["']$/g, '');
     if (!token) return;
 
     while (this.isPolling) {
@@ -56,12 +58,17 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         for (const update of updates) {
           this.lastUpdateId = update.update_id;
           if (update.message && update.message.text) {
-            await this.handleMessage(update.message);
+            try {
+              await this.handleMessage(update.message);
+            } catch (msgErr: any) {
+              this.logger.error(`Error procesando mensaje ${update.update_id}: ${msgErr.message}`, msgErr.stack);
+            }
           }
         }
       } catch (err: any) {
         if (this.isPolling) {
-          this.logger.warn(`Error en polling de Telegram: ${err.message}`);
+          const detail = err.response?.data?.description || err.message;
+          this.logger.warn(`Error en polling de Telegram: ${detail}`);
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       }
@@ -70,9 +77,20 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
   private async handleMessage(message: any) {
     const chatId = String(message.chat.id);
-    const text: string = (message.text || '').trim();
+    let text: string = (message.text || '').trim();
 
-    if (!text.startsWith('/')) return;
+    // Strip bot username if mentioned (e.g. /buscar@MyBot -> /buscar)
+    if (text.includes('@')) {
+      text = text.replace(/@[a-zA-Z0-0_]+/g, '').trim();
+    }
+
+    if (!text.startsWith('/')) {
+      // Respond with menu if user sends plain text greeting
+      if (['hola', 'menu', 'ayuda', 'start', 'help', 'hi'].includes(text.toLowerCase())) {
+        await this.sendHelpMessage(chatId);
+      }
+      return;
+    }
 
     const parts = text.split(/\s+/);
     const command = parts[0].toLowerCase();

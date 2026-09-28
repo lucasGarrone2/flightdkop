@@ -32,8 +32,23 @@ export class AlertsService {
       return true;
     } catch (err: any) {
       const detail = err.response?.data?.description || err.message;
-      this.logger.error(`Error enviando mensaje a Telegram (${chatId}): ${detail}`);
-      return false;
+      this.logger.error(`Error enviando mensaje HTML a Telegram (${chatId}): ${detail}. Reintentando sin formato HTML...`);
+
+      try {
+        const plainText = messageHtml.replace(/<[^>]*>?/gm, '');
+        const url = `https://api.telegram.org/bot${token}/sendMessage`;
+        await axios.post(url, {
+          chat_id: chatId,
+          text: plainText,
+          disable_web_page_preview: false,
+        });
+        this.logger.log(`📱 Alerta de Telegram enviada (fallback sin HTML) a ${chatId}.`);
+        return true;
+      } catch (fallbackErr: any) {
+        const fallbackDetail = fallbackErr.response?.data?.description || fallbackErr.message;
+        this.logger.error(`Error final enviando mensaje a Telegram (${chatId}): ${fallbackDetail}`);
+        return false;
+      }
     }
   }
 
