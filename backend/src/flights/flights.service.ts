@@ -48,7 +48,11 @@ export class FlightsService {
     const origins = dto.origins && dto.origins.length > 0 ? dto.origins : ['EZE', 'AEP'];
     const destinations = dto.destinations && dto.destinations.length > 0 ? dto.destinations : ['CPH'];
 
-    this.logger.log(`MultiSearch: Orígenes=[${origins.join(',')}], Destinos=[${destinations.join(',')}], Fechas=[${dates.join(', ')}]`);
+    // Combine origin airport codes into a single Google Flights query (e.g. "EZE,AEP,COR")
+    // Google Flights accepts multiple comma-separated origin airports in 1 single API call.
+    const combinedOrigin = origins.join(',');
+
+    this.logger.log(`MultiSearch Optimizado: Orígenes=[${combinedOrigin}], Destinos=[${destinations.join(',')}], FechasMuestra=[${dates.join(', ')}]`);
 
     let totalQueries = 0;
     let cachedHits = 0;
@@ -58,10 +62,8 @@ export class FlightsService {
     const queryTasks: Array<{ origin: string; destination: string; date: string }> = [];
 
     for (const date of dates) {
-      for (const origin of origins) {
-        for (const destination of destinations) {
-          queryTasks.push({ origin, destination, date });
-        }
+      for (const destination of destinations) {
+        queryTasks.push({ origin: combinedOrigin, destination, date });
       }
     }
 
@@ -182,17 +184,23 @@ export class FlightsService {
   }
 
   private generateDateRange(startDateStr: string, endDateStr: string): string[] {
-    const dates: string[] = [];
-    const current = new Date(startDateStr + 'T00:00:00');
+    if (startDateStr === endDateStr) return [startDateStr];
+
+    const start = new Date(startDateStr + 'T00:00:00');
     const end = new Date(endDateStr + 'T00:00:00');
+    const diffDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)));
 
-    const maxDays = 14;
-    let count = 0;
+    // Sample at most 4 key dates across the range to minimize API quota usage
+    const targetCount = Math.min(4, diffDays + 1);
+    const dates: string[] = [];
 
-    while (current <= end && count < maxDays) {
-      dates.push(current.toISOString().split('T')[0]);
-      current.setDate(current.getDate() + 1);
-      count++;
+    for (let i = 0; i < targetCount; i++) {
+      const dayOffset = Math.round((i / (targetCount - 1)) * diffDays);
+      const sampleDate = new Date(start.getTime() + dayOffset * 24 * 3600 * 1000);
+      const iso = sampleDate.toISOString().split('T')[0];
+      if (!dates.includes(iso)) {
+        dates.push(iso);
+      }
     }
 
     return dates;

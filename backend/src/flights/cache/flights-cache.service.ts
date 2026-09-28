@@ -10,8 +10,8 @@ interface CacheEntry {
 export class FlightsCacheService {
   private readonly logger = new Logger(FlightsCacheService.name);
   private cache = new Map<string, CacheEntry>();
-  // Default TTL: 6 hours (in milliseconds)
-  private readonly ttlMs = 6 * 60 * 60 * 1000;
+  // Default TTL: 24 hours (in milliseconds)
+  private readonly ttlMs = 24 * 60 * 60 * 1000;
 
   get(key: string): FlightOffer[] | null {
     const entry = this.cache.get(key);

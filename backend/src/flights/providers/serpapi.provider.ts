@@ -122,16 +122,17 @@ export class SerpApiProvider implements FlightProvider {
 
     const isSelfTransfer = Boolean(itinerary.self_transfer || itinerary.is_self_transfer);
     const mainAirline = firstSegment?.airline || 'Varios';
-    const googleFlightsUrl = `https://www.google.com/travel/flights?q=Vuelos%20de%20${params.origin}%20a%20${params.destination}%20el%20${params.departureDate}`;
+    const actualOrigin = firstSegment?.departureAirport || params.origin;
+    const googleFlightsUrl = `https://www.google.com/travel/flights?q=Vuelos%20de%20${actualOrigin}%20a%20${params.destination}%20el%20${params.departureDate}`;
 
     return {
-      id: `serpapi-${params.origin}-${params.destination}-${params.departureDate}-${index}`,
+      id: `serpapi-${actualOrigin}-${params.destination}-${params.departureDate}-${index}`,
       provider: this.name,
       price,
       currency: 'USD',
       airline: mainAirline,
       airlineLogo: firstSegment?.airlineLogo,
-      origin: params.origin,
+      origin: actualOrigin,
       destination: params.destination,
       departureDate: params.departureDate,
       departureTime: firstSegment?.departureTime || '',
