@@ -9,12 +9,13 @@ export class AlertsService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async sendTelegramAlert(messageHtml: string): Promise<boolean> {
-    const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
-    const chatId = this.configService.get<string>('TELEGRAM_CHAT_ID');
+  async sendTelegramAlert(messageHtml: string, targetChatId?: string): Promise<boolean> {
+    const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN')?.trim();
+    const envChatId = this.configService.get<string>('TELEGRAM_CHAT_ID')?.trim();
+    const chatId = targetChatId || envChatId;
 
     if (!token || !chatId) {
-      this.logger.warn('TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados.');
+      this.logger.warn(`TELEGRAM_BOT_TOKEN (${token ? 'OK' : 'FALTA'}) o Chat ID (${chatId ? 'OK' : 'FALTA'}) no configurados.`);
       return false;
     }
 
@@ -27,10 +28,11 @@ export class AlertsService {
         disable_web_page_preview: false,
       });
 
-      this.logger.log('📱 Alerta de Telegram enviada con éxito.');
+      this.logger.log(`📱 Alerta de Telegram enviada con éxito a ${chatId}.`);
       return true;
     } catch (err: any) {
-      this.logger.error(`Error enviando mensaje a Telegram: ${err.message}`);
+      const detail = err.response?.data?.description || err.message;
+      this.logger.error(`Error enviando mensaje a Telegram (${chatId}): ${detail}`);
       return false;
     }
   }

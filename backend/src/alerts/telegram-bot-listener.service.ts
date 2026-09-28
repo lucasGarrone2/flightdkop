@@ -87,6 +87,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
       if (command === '/dashboard' || command === '/resumen') {
         await this.alertsService.sendTelegramAlert(
           `📊 Generando <b>Dashboard Ejecutivo</b> para el rango general <b>${DEFAULT_GENERAL_START_DATE} ➔ ${DEFAULT_GENERAL_END_DATE}</b>...`,
+          chatId,
         );
 
         const res = await this.flightsService.searchMultiFlights({
@@ -122,13 +123,13 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           if (res.fastestOffer.bookingUrl) msg += `<a href="${res.fastestOffer.bookingUrl}">🔗 Ver en Google Flights</a>\n`;
         }
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
       // --- COMMAND: /rutas ---
       if (command === '/rutas' || command === '/conexiones') {
-        await this.alertsService.sendTelegramAlert(`🗺️ Analizando <b>Rutas Alternativas y Conexiones en Europa</b>...`);
+        await this.alertsService.sendTelegramAlert(`🗺️ Analizando <b>Rutas Alternativas y Conexiones en Europa</b>...`, chatId);
 
         const res = await this.flightsService.searchMultiFlights({
           origins: ['EZE', 'AEP'],
@@ -147,7 +148,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
         msg += `\n💡 <i>Consejo: Volar a Copenhague (CPH) directo o vía Madrid (MAD) / Barcelona (BCN) suele ofrecer el mejor equilibrio precio/duración.</i>`;
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
@@ -156,6 +157,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
             '⚠️ <b>Formato incorrecto.</b>\n\nUso para Rango:\n<code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>',
+            chatId,
           );
           return;
         }
@@ -178,7 +180,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         }
 
         if (isNaN(targetPrice) || targetPrice <= 0) {
-          await this.alertsService.sendTelegramAlert('⚠️ El precio máximo debe ser un número válido.');
+          await this.alertsService.sendTelegramAlert('⚠️ El precio máximo debe ser un número válido.', chatId);
           return;
         }
 
@@ -200,7 +202,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         msg += `🆔 <b>ID de Vigilancia:</b> <code>${alert.id}</code>\n\n`;
         msg += `<i>El sistema monitoreará diariamente este rango de viaje y te avisará automáticamente cuando encuentre una oferta por debajo de tu objetivo.</i>`;
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
@@ -209,7 +211,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const alerts = await this.historyService.getUserPriceAlerts(chatId);
 
         if (!alerts || alerts.length === 0) {
-          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>');
+          await this.alertsService.sendTelegramAlert('📭 No tenés vigilancias activas en este momento.\nPodés agregar una escribiendo: <code>/vigilar EZE CPH 2027-03-10 2027-04-05 1100</code>', chatId);
           return;
         }
 
@@ -222,27 +224,27 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         msg += `<i>Para borrar una vigilancia, enviá: <code>/borrar_vigilancia ID</code></i>`;
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
       // --- COMMAND: /borrar_vigilancia ID ---
       if (command === '/borrar_vigilancia' || command === '/eliminar_vigilancia') {
         if (parts.length < 2) {
-          await this.alertsService.sendTelegramAlert('⚠️ Debés indicar el ID de la vigilancia. Ejemplo: <code>/borrar_vigilancia ID</code>');
+          await this.alertsService.sendTelegramAlert('⚠️ Debés indicar el ID de la vigilancia. Ejemplo: <code>/borrar_vigilancia ID</code>', chatId);
           return;
         }
 
         const alertId = parts[1];
         await this.historyService.deletePriceAlert(alertId, chatId);
 
-        await this.alertsService.sendTelegramAlert(`🗑️ <b>Vigilancia desactivada con éxito.</b> (ID: <code>${alertId}</code>)`);
+        await this.alertsService.sendTelegramAlert(`🗑️ <b>Vigilancia desactivada con éxito.</b> (ID: <code>${alertId}</code>)`, chatId);
         return;
       }
 
       // --- COMMAND: /resumen_semanal ---
       if (command === '/resumen_semanal' || command === '/viernes') {
-        await this.alertsService.sendTelegramAlert(`✨ Generando <b>Resumen Semanal de Ofertas</b>...`);
+        await this.alertsService.sendTelegramAlert(`✨ Generando <b>Resumen Semanal de Ofertas</b>...`, chatId);
         await this.flightsCronService.sendWeeklySummary();
         return;
       }
@@ -252,6 +254,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (parts.length < 6) {
           await this.alertsService.sendTelegramAlert(
             '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/guardar_fecha ORIGEN DESTINO FECHA PRECIO AEROLINEA</code>\nEjemplo: <code>/guardar_fecha EZE CPH 2027-03-15 824 Lufthansa</code>',
+            chatId,
           );
           return;
         }
@@ -263,7 +266,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         const airline = parts.slice(5).join(' ');
 
         if (isNaN(price)) {
-          await this.alertsService.sendTelegramAlert('⚠️ El precio debe ser un número válido.');
+          await this.alertsService.sendTelegramAlert('⚠️ El precio debe ser un número válido.', chatId);
           return;
         }
 
@@ -286,7 +289,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         msg += `🆔 <b>ID Guardado:</b> <code>${saved.id}</code>\n\n`;
         msg += `<i>Podés consultar tus fechas guardadas enviando: <code>/fechas</code></i>`;
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
@@ -297,6 +300,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (!savedDates || savedDates.length === 0) {
           await this.alertsService.sendTelegramAlert(
             '📭 No tenés fechas ni vuelos favoritos guardados.\nGuardá una fecha escribiendo:\n<code>/guardar_fecha EZE CPH 2027-03-15 824 Lufthansa</code>',
+            chatId,
           );
           return;
         }
@@ -309,21 +313,21 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         msg += `<i>Para borrar una fecha guardada, enviá: <code>/borrar_fecha ID</code></i>`;
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
       // --- COMMAND: /borrar_fecha ID ---
       if (command === '/borrar_fecha' || command === '/eliminar_fecha') {
         if (parts.length < 2) {
-          await this.alertsService.sendTelegramAlert('⚠️ Debés indicar el ID de la fecha guardada. Ejemplo: <code>/borrar_fecha ID</code>');
+          await this.alertsService.sendTelegramAlert('⚠️ Debés indicar el ID de la fecha guardada. Ejemplo: <code>/borrar_fecha ID</code>', chatId);
           return;
         }
 
         const savedId = parts[1];
         await this.historyService.deleteSavedDate(savedId, chatId);
 
-        await this.alertsService.sendTelegramAlert(`🗑️ <b>Fecha/Vuelo eliminado de favoritos.</b> (ID: <code>${savedId}</code>)`);
+        await this.alertsService.sendTelegramAlert(`🗑️ <b>Fecha/Vuelo eliminado de favoritos.</b> (ID: <code>${savedId}</code>)`, chatId);
         return;
       }
 
@@ -332,6 +336,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (parts.length < 4) {
           await this.alertsService.sendTelegramAlert(
             '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/buscar ORIGEN DESTINO FECHA [directo|1escala|2escalas]</code>\nEjemplo: <code>/buscar EZE CPH 2027-03-30 directo</code>',
+            chatId,
           );
           return;
         }
@@ -343,6 +348,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
         await this.alertsService.sendTelegramAlert(
           `🔍 Buscando vuelos para <b>${origin} ➔ ${destination}</b> en fecha <b>${departureDate}</b>${maxStops !== undefined ? ` (Máx ${maxStops} escalas)` : ''}...`,
+          chatId,
         );
 
         const offers = await this.flightsService.searchFlights({
@@ -355,6 +361,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (!offers || offers.length === 0) {
           await this.alertsService.sendTelegramAlert(
             `❌ No se encontraron vuelos para <b>${origin} ➔ ${destination}</b> en la fecha <b>${departureDate}</b>.`,
+            chatId,
           );
           return;
         }
@@ -370,7 +377,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           msg += `\n`;
         });
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
@@ -379,6 +386,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (parts.length < 5) {
           await this.alertsService.sendTelegramAlert(
             '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/rango ORIGEN DESTINO FECHA_INICIO FECHA_FIN [directo|1escala]</code>\nEjemplo: <code>/rango EZE CPH 2027-03-10 2027-04-05 1escala</code>',
+            chatId,
           );
           return;
         }
@@ -391,6 +399,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
         await this.alertsService.sendTelegramAlert(
           `🔍 Evaluando precios y duraciones <b>${startDate} ➔ ${endDate}</b> para <b>${origin} ➔ ${destination}</b>${maxStops !== undefined ? ` (Máx ${maxStops} escalas)` : ''}...`,
+          chatId,
         );
 
         const res = await this.flightsService.searchMultiFlights({
@@ -402,7 +411,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         if (!res.dateSummaries || res.dateSummaries.length === 0) {
-          await this.alertsService.sendTelegramAlert(`❌ No se encontraron ofertas en el rango de fechas solicitado.`);
+          await this.alertsService.sendTelegramAlert(`❌ No se encontraron ofertas en el rango de fechas solicitado.`, chatId);
           return;
         }
 
@@ -428,7 +437,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
         msg += `\n💡 <i>Nota: Precios en USD netos retornados por la API. Al pagar en pesos en Argentina con tarjeta local se aplican impuestos locales (Impuesto PAÍS / Percepciones).</i>`;
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
@@ -437,6 +446,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         if (parts.length < 3) {
           await this.alertsService.sendTelegramAlert(
             '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/argentina DESTINO FECHA [directo|1escala]</code>\nEjemplo: <code>/argentina CPH 2027-03-30 1escala</code>',
+            chatId,
           );
           return;
         }
@@ -447,6 +457,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
 
         await this.alertsService.sendTelegramAlert(
           `🔍 Buscando desde <b>toda Argentina (EZE, AEP, COR, MDZ, ROS)</b> a <b>${destination}</b> el <b>${departureDate}</b>${maxStops !== undefined ? ` (Máx ${maxStops} escalas)` : ''}...`,
+          chatId,
         );
 
         const res = await this.flightsService.searchMultiFlights({
@@ -458,7 +469,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
         });
 
         if (!res.offers || res.offers.length === 0) {
-          await this.alertsService.sendTelegramAlert(`❌ No se encontraron vuelos disponibles desde Argentina.`);
+          await this.alertsService.sendTelegramAlert(`❌ No se encontraron vuelos disponibles desde Argentina.`, chatId);
           return;
         }
 
@@ -472,14 +483,14 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
           msg += `\n`;
         });
 
-        await this.alertsService.sendTelegramAlert(msg);
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 
       await this.sendHelpMessage(chatId);
     } catch (err: any) {
       this.logger.error(`Error procesando comando Telegram: ${err.message}`, err.stack);
-      await this.alertsService.sendTelegramAlert(`❌ Error procesando el comando: ${err.message}`);
+      await this.alertsService.sendTelegramAlert(`❌ Error procesando el comando: ${err.message}`, chatId);
     }
   }
 
