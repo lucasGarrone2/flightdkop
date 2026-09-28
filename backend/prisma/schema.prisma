@@ -71,3 +71,15 @@ model SavedDate {
   @@map("saved_dates")
 }
 
+model UserConfig {
+  id            String   @id @default(uuid())
+  chatId        String   @unique
+  defaultOrigin String   @default("EZE,AEP")
+  defaultDest   String   @default("CPH")
+  maxStops      Int      @default(2)
+  updatedAt     DateTime @updatedAt
+
+  @@map("user_configs")
+}
+
+

@@ -6,6 +6,7 @@ import { HistoryService } from '../flights/history/history.service';
 import { AlertsService } from './alerts.service';
 import { DEFAULT_GENERAL_START_DATE, DEFAULT_GENERAL_END_DATE } from '../config/airports.config';
 
+import { AnalyticsService } from '../flights/analytics/analytics.service';
 import { FlightsCronService } from '../flights/cron/flights-cron.service';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     private readonly historyService: HistoryService,
     private readonly alertsService: AlertsService,
     private readonly flightsCronService: FlightsCronService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   onModuleInit() {
@@ -78,8 +80,150 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     this.logger.log(`📩 Comando recibido de Telegram (${chatId}): ${text}`);
 
     try {
-      if (command === '/start' || command === '/ayuda' || command === '/help') {
+      if (command === '/menu' || command === '/start' || command === '/ayuda' || command === '/help') {
         await this.sendHelpMessage(chatId);
+        return;
+      }
+
+      // --- COMMAND: /pesos MONTO_USD ---
+      if (command === '/pesos' || command === '/dolar' || command === '/impuestos') {
+        let usdAmount = parts.length >= 2 ? parseFloat(parts[1]) : 824;
+        if (isNaN(usdAmount) || usdAmount <= 0) usdAmount = 824;
+
+        const dolarTarjetaRate = 1600; // Dólar Oficial + Impuestos (PAÍS/Percepciones)
+        const dolarMepRate = 1450;     // Dólar MEP estimado
+
+        const totalTarjetaARS = Math.round(usdAmount * dolarTarjetaRate);
+        const totalMepARS = Math.round(usdAmount * dolarMepRate);
+
+        let msg = `💱 <b>CALCULADORA DE COTIZACIÓN & IMPUESTOS (ARS)</b>\n\n`;
+        msg += `💵 <b>Monto en USD:</b> $${usdAmount} USD\n\n`;
+        msg += `💳 <b>Pagando con Tarjeta de Crédito (Dólar Tarjeta):</b>\n`;
+        msg += `👉 <b>~$${totalTarjetaARS.toLocaleString('es-AR')} ARS</b> (Est. $1.600 ARS/USD)\n\n`;
+        msg += `🏦 <b>Pagando con Dólar MEP / Saldo en USD:</b>\n`;
+        msg += `👉 <b>~$${totalMepARS.toLocaleString('es-AR')} ARS</b> (Est. $1.450 ARS/USD)\n\n`;
+        msg += `💡 <i>Tip: Pagando el resumen de tu tarjeta con dólares en tu caja de ahorro (vía MEP) ahorrás cerca del 10% en impuestos.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg, chatId);
+        return;
+      }
+
+      // --- COMMAND: /mejores_dias ---
+      if (command === '/mejores_dias' || command === '/dias') {
+        await this.alertsService.sendTelegramAlert(`📅 Analizando el <b>día más barato de la semana</b> para volar...`, chatId);
+
+        const res = await this.flightsService.searchMultiFlights({
+          origins: ['EZE', 'AEP'],
+          destinations: ['CPH'],
+          startDate: DEFAULT_GENERAL_START_DATE,
+          endDate: DEFAULT_GENERAL_END_DATE,
+        });
+
+        const bestDays = this.analyticsService.analyzeBestDaysOfWeek(res.offers);
+
+        let msg = `📅 <b>ANÁLISIS: MEJORES DÍAS DE LA SEMANA PARA VOLAR</b>\n\n`;
+        msg += `<i>Promedio estimado despegando desde Argentina hacia Europa:</i>\n\n`;
+
+        bestDays.forEach((item, idx) => {
+          const medal = idx === 0 ? '🟢 MEJOR OPCIÓN: ' : idx === 1 ? '🟡 SEGUNDO MEJOR: ' : '• ';
+          msg += `${medal}<b>${item.dayName}:</b> USD $${item.avgPrice} (${item.sampleCount} vuelos analizados)\n`;
+        });
+
+        msg += `\n💡 <i>Consejo: Volar a mitad de semana (Martes/Miércoles) suele tener tarifas hasta un 15% más bajas que los fines de semana.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg, chatId);
+        return;
+      }
+
+      // --- COMMAND: /escalas /stopover ---
+      if (command === '/escalas' || command === '/stopover') {
+        await this.alertsService.sendTelegramAlert(`🗺️ Analizando las <b>mejores capitales europeas de conexión</b>...`, chatId);
+
+        const res = await this.flightsService.searchMultiFlights({
+          origins: ['EZE', 'AEP'],
+          destinations: ['CPH', 'BLL', 'HAM'],
+          startDate: DEFAULT_GENERAL_START_DATE,
+          endDate: '2027-03-24',
+        });
+
+        const a = res.analytics;
+        let msg = `🗺️ <b>CAPITALES DE CONEXIÓN Y ESCALAS EN EUROPA</b>\n\n`;
+
+        a.alternativeHubs.forEach((hub) => {
+          msg += `• <b>Vía ${hub.hubCode}:</b> desde USD $${hub.lowestPrice} (${hub.offerCount} opciones)\n`;
+        });
+
+        msg += `\n💡 <i>Consejo: Volar vía Madrid (MAD) o Barcelona (BCN) suele ofrecer las escalas más cómodas en idioma español antes de subir a Copenhague.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg, chatId);
+        return;
+      }
+
+      // --- COMMAND: /alerta PRECIO_MAX ---
+      if (command === '/alerta') {
+        if (parts.length < 2) {
+          await this.alertsService.sendTelegramAlert(
+            '⚠️ <b>Formato incorrecto.</b>\nUso: <code>/alerta PRECIO_MAX</code>\nEjemplo: <code>/alerta 900</code>',
+            chatId,
+          );
+          return;
+        }
+
+        const targetPrice = parseFloat(parts[1]);
+        if (isNaN(targetPrice) || targetPrice <= 0) {
+          await this.alertsService.sendTelegramAlert('⚠️ El precio debe ser un número válido.', chatId);
+          return;
+        }
+
+        const userConf = await this.historyService.getUserConfig(chatId);
+        const origin = userConf?.defaultOrigin || 'EZE,AEP';
+        const destination = userConf?.defaultDest || 'CPH';
+
+        const alert = await this.historyService.createPriceAlert(
+          origin,
+          destination,
+          DEFAULT_GENERAL_START_DATE,
+          DEFAULT_GENERAL_END_DATE,
+          targetPrice,
+          chatId,
+        );
+
+        let msg = `⚡ <b>¡ALERTA RÁPIDA ACTIVADA!</b>\n\n`;
+        msg += `✈️ <b>Ruta:</b> ${alert.origin} ➔ ${alert.destination}\n`;
+        msg += `📅 <b>Rango:</b> ${DEFAULT_GENERAL_START_DATE} ➔ ${DEFAULT_GENERAL_END_DATE}\n`;
+        msg += `💰 <b>Precio Objetivo:</b> USD $${alert.targetPrice}\n`;
+        msg += `🆔 <b>ID Alerta:</b> <code>${alert.id}</code>\n\n`;
+        msg += `<i>Recibirás un aviso inmediato si cualquier vuelo en marzo/abril cae por debajo de USD $${alert.targetPrice}.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg, chatId);
+        return;
+      }
+
+      // --- COMMAND: /config ORIGENES [ESCALAS] ---
+      if (command === '/config' || command === '/mi_config') {
+        if (parts.length < 2) {
+          const current = await this.historyService.getUserConfig(chatId);
+          let msg = `⚙️ <b>CONFIGURACIÓN Y PREFERENCIAS ACTUALES</b>\n\n`;
+          msg += `🇦🇷 <b>Orígenes por Defecto:</b> ${current?.defaultOrigin || 'EZE,AEP'}\n`;
+          msg += `🇩🇰 <b>Destino por Defecto:</b> ${current?.defaultDest || 'CPH'}\n`;
+          msg += `🛑 <b>Máximo Escalas:</b> ${current?.maxStops ?? 2}\n\n`;
+          msg += `<i>Para modificar tu configuración, enviá:\n<code>/config EZE,COR 1</code> (Origen EZE y Córdoba, máximo 1 escala)</i>`;
+
+          await this.alertsService.sendTelegramAlert(msg, chatId);
+          return;
+        }
+
+        const newOrigin = parts[1].toUpperCase();
+        const maxStops = parts.length >= 3 ? parseInt(parts[2], 10) : 2;
+
+        await this.historyService.saveUserConfig(chatId, newOrigin, 'CPH', isNaN(maxStops) ? 2 : maxStops);
+
+        let msg = `✅ <b>¡PREFERENCIAS GUARDADAS CON ÉXITO!</b>\n\n`;
+        msg += `🇦🇷 Orígenes preferidos: <b>${newOrigin}</b>\n`;
+        msg += `🛑 Máximo escalas: <b>${isNaN(maxStops) ? 2 : maxStops}</b>\n\n`;
+        msg += `<i>Tus búsquedas usarán estos valores por defecto.</i>`;
+
+        await this.alertsService.sendTelegramAlert(msg, chatId);
         return;
       }
 

@@ -128,4 +128,34 @@ export class AnalyticsService {
       alternativeHubs,
     };
   }
+
+  analyzeBestDaysOfWeek(offers: FlightOffer[]): Array<{ dayName: string; avgPrice: number; sampleCount: number }> {
+    const daysMap: Record<number, { name: string; prices: number[] }> = {
+      0: { name: 'Domingo', prices: [] },
+      1: { name: 'Lunes', prices: [] },
+      2: { name: 'Martes', prices: [] },
+      3: { name: 'Miércoles', prices: [] },
+      4: { name: 'Jueves', prices: [] },
+      5: { name: 'Viernes', prices: [] },
+      6: { name: 'Sábado', prices: [] },
+    };
+
+    offers.forEach((o) => {
+      const d = new Date(o.departureDate + 'T00:00:00');
+      const dayNum = d.getDay();
+      if (daysMap[dayNum]) {
+        daysMap[dayNum].prices.push(o.price);
+      }
+    });
+
+    const result = Object.values(daysMap)
+      .map((item) => ({
+        dayName: item.name,
+        avgPrice: item.prices.length > 0 ? Math.round(item.prices.reduce((a, b) => a + b, 0) / item.prices.length) : 0,
+        sampleCount: item.prices.length,
+      }))
+      .filter((item) => item.sampleCount > 0);
+
+    return result.sort((a, b) => a.avgPrice - b.avgPrice);
+  }
 }

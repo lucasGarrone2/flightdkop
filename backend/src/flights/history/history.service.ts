@@ -161,5 +161,30 @@ export class HistoryService {
       },
     });
   }
+
+  // --- User Preferences Config CRUD ---
+
+  async getUserConfig(chatId: string) {
+    return this.prisma.userConfig.findUnique({
+      where: { chatId },
+    });
+  }
+
+  async saveUserConfig(chatId: string, defaultOrigin: string, defaultDest: string = 'CPH', maxStops: number = 2) {
+    return this.prisma.userConfig.upsert({
+      where: { chatId },
+      update: {
+        defaultOrigin,
+        defaultDest,
+        maxStops,
+      },
+      create: {
+        chatId,
+        defaultOrigin,
+        defaultDest,
+        maxStops,
+      },
+    });
+  }
 }
 
