@@ -24,11 +24,16 @@ export class TelegramBotListenerService implements OnModuleInit, OnModuleDestroy
     private readonly analyticsService: AnalyticsService,
   ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     const rawToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     const token = rawToken?.trim()?.replace(/^["']|["']$/g, '');
     if (token) {
-      this.logger.log('🤖 Iniciando escucha interactiva de Telegram (Long Polling)...');
+      this.logger.log('🤖 Limpiando webhooks anteriores e iniciando escucha (Long Polling)...');
+      try {
+        await axios.get(`https://api.telegram.org/bot${token}/deleteWebhook`);
+      } catch (err: any) {
+        // Ignore webhook deletion errors
+      }
       this.isPolling = true;
       this.pollUpdates();
     } else {

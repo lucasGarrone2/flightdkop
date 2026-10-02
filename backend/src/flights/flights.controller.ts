@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
 import { FlightsService } from './flights.service';
 import { FlightsCronService } from './cron/flights-cron.service';
+import { AlertsService } from '../alerts/alerts.service';
 import { SearchFlightsDto } from './dto/search-flights.dto';
 import { SearchMultiFlightsDto } from './dto/search-multi-flights.dto';
 import { FlightOffer } from './interfaces/flight-offer.interface';
@@ -11,6 +12,7 @@ export class FlightsController {
   constructor(
     private readonly flightsService: FlightsService,
     private readonly flightsCronService: FlightsCronService,
+    private readonly alertsService: AlertsService,
   ) {}
 
   @Get('search')
@@ -28,5 +30,13 @@ export class FlightsController {
   @Post('trigger-alert-scan')
   async triggerAlertScan() {
     return this.flightsCronService.runAutomaticScan();
+  }
+
+  @Get('test-telegram')
+  async testTelegram() {
+    const success = await this.alertsService.sendTelegramAlert(
+      '🔔 <b>Prueba de Conexión:</b> El servidor backend en Render está 100% ONLINE y escuchando mensajes.',
+    );
+    return { success, message: success ? 'Mensaje enviado a Telegram con éxito' : 'Fallo en envío de mensaje' };
   }
 }
